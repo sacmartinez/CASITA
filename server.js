@@ -18,7 +18,7 @@ app.use(cors());
 app.use(express.json());
 
 // --- CONFIGURACIÓN DE NOTIFICACIONES PUSH ---
-// Se inicializará dinámicamente en startServer() tras sincronizar la base de datos de MongoDB.
+let vapidKeys = null; // Se inicializará dinámicamente en startServer() tras sincronizar la base de datos.
 
 // Helper para obtener el nombre del otro usuario
 const getOtherUser = (user) => user === 'Ismael' ? 'Sandra' : 'Ismael';
@@ -867,7 +867,7 @@ async function startServer() {
     await syncFromMongoDB();
     
     // 2. Configurar claves VAPID para notificaciones push una vez cargada la base de datos
-    let vapidKeys = db.getVapidKeys();
+    vapidKeys = db.getVapidKeys();
     if (!vapidKeys) {
       vapidKeys = webpush.generateVAPIDKeys();
       db.saveVapidKeys(vapidKeys);

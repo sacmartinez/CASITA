@@ -168,37 +168,72 @@ export default function TaskManager({ currentUser }) {
           </div>
         ) : (
           <div className="list-container" style={{ maxHeight: '250px' }}>
-            {tasks.map((task) => (
-              <div key={task.id} className="list-item">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
-                  <span className="list-item-text" style={{ fontWeight: 500 }}>{task.text}</span>
+            {tasks.map((task) => {
+              // Buscar si se ha completado en las últimas 12 horas para tacharla
+              const recentComp = history.find(entry => 
+                entry.taskId === task.id && 
+                (new Date() - new Date(entry.completedAt)) < 12 * 60 * 60 * 1000
+              );
+
+              return (
+                <div key={task.id} className="list-item" style={{ opacity: recentComp ? 0.75 : 1 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
+                    <span 
+                      className="list-item-text" 
+                      style={{ 
+                        fontWeight: 500,
+                        textDecoration: recentComp ? 'line-through' : 'none',
+                        color: recentComp ? 'var(--text-muted)' : '#ffffff',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {task.text}
+                    </span>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                      <span className={`task-badge ${task.category}`}>
+                        {getCategoryLabel(task.category)}
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        Añadida por {task.addedBy}
+                      </span>
+                    </div>
+                  </div>
                   <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                    <span className={`task-badge ${task.category}`}>
-                      {getCategoryLabel(task.category)}
-                    </span>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                      Añadida por {task.addedBy}
-                    </span>
+                    {recentComp ? (
+                      <span style={{ 
+                        fontSize: '0.7rem', 
+                        padding: '0.25rem 0.5rem', 
+                        borderRadius: '6px', 
+                        background: 'rgba(16, 185, 129, 0.1)', 
+                        border: '1px solid rgba(16, 185, 129, 0.2)', 
+                        color: '#34d399', 
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem'
+                      }}>
+                        ✅ {recentComp.completedBy}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleCompleteTask(task.id)}
+                        className="btn-complete-task"
+                      >
+                        Hecho
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleArchiveTask(task.id)}
+                      className="btn-secondary"
+                      style={{ padding: '0.4rem 0.5rem', fontSize: '0.8rem', borderRadius: '8px' }}
+                      title="Archivar tarea sin marcar como realizada"
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                  <button
-                    onClick={() => handleCompleteTask(task.id)}
-                    className="btn-complete-task"
-                  >
-                    Hecho
-                  </button>
-                  <button
-                    onClick={() => handleArchiveTask(task.id)}
-                    className="btn-secondary"
-                    style={{ padding: '0.4rem 0.5rem', fontSize: '0.8rem', borderRadius: '8px' }}
-                    title="Archivar tarea sin marcar como realizada"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

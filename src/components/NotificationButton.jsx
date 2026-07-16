@@ -28,6 +28,13 @@ export default function NotificationButton({ currentUser }) {
 
     setPermission(Notification.permission);
     checkSubscription();
+
+    // Temporizador de seguridad: si iOS congela el serviceWorker.ready, desbloquea el botón en 3 segundos
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
+
+    return () => clearTimeout(safetyTimer);
   }, []);
 
   // Volver a suscribirse automáticamente si cambia el usuario y ya está activado
@@ -37,11 +44,23 @@ export default function NotificationButton({ currentUser }) {
     }
   }, [currentUser]);
 
+  const getRegistration = async () => {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      if (regs && regs.length > 0) return regs[0];
+    } catch (e) {
+      console.warn('Error fetching registrations:', e);
+    }
+    return await navigator.serviceWorker.ready;
+  };
+
   const checkSubscription = async () => {
     try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      setIsSubscribed(!!sub);
+      const reg = await getRegistration();
+      if (reg) {
+        const sub = await reg.pushManager.getSubscription();
+        setIsSubscribed(!!sub);
+      }
     } catch (err) {
       console.error('Error comprobando suscripción push:', err);
     } finally {
@@ -51,7 +70,8 @@ export default function NotificationButton({ currentUser }) {
 
   const registerSubscriptionOnServer = async () => {
     try {
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await getRegistration();
+      if (!reg) return;
       let sub = await reg.pushManager.getSubscription();
 
       if (!sub) {
@@ -90,10 +110,12 @@ export default function NotificationButton({ currentUser }) {
     if (isSubscribed) {
       // Desactivar notificaciones
       try {
-        const reg = await navigator.serviceWorker.ready;
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) {
-          await sub.unsubscribe();
+        const reg = await getRegistration();
+        if (reg) {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            await sub.unsubscribe();
+          }
         }
         setIsSubscribed(false);
       } catch (err) {

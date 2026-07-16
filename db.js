@@ -602,11 +602,14 @@ export const db = {
   // --- MASCOTAS ---
   getPetsData: () => {
     const data = readDB();
-    // Forzar que solo existan Kalu y Oreo en la estructura de datos
-    if (!data.pets || !data.pets["Kalu"] || !data.pets["Oreo"] || data.pets["Jade"] || data.pets["Lulu"]) {
+    // Forzar que solo existan Kalu, Lua y Oreo en la estructura de datos
+    if (!data.pets || !data.pets["Kalu"] || !data.pets["Lua"] || !data.pets["Oreo"] || data.pets["Jade"] || data.pets["Lulu"]) {
       const oldOreo = data.pets && data.pets["Oreo"] ? data.pets["Oreo"] : { "birthday": "", "weightLog": [], "medicalLog": [] };
+      const oldKalu = data.pets && data.pets["Kalu"] ? data.pets["Kalu"] : { "birthday": "", "weightLog": [], "medicalLog": [] };
+      const oldLua = data.pets && data.pets["Lua"] ? data.pets["Lua"] : { "birthday": "", "weightLog": [], "medicalLog": [] };
       data.pets = {
-        "Kalu": data.pets && data.pets["Kalu"] ? data.pets["Kalu"] : { "birthday": "", "weightLog": [], "medicalLog": [] },
+        "Kalu": oldKalu,
+        "Lua": oldLua,
         "Oreo": oldOreo
       };
       writeDB(data);

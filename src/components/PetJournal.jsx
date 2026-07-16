@@ -9,8 +9,8 @@ export default function PetJournal({ currentUser }) {
   const [observation, setObservation] = useState('');
   const [weight, setWeight] = useState('');
 
-  const petList = ['Kalu', 'Oreo'];
-  const petEmojis = { Kalu: '🐹', Oreo: '🐹' };
+  const petList = ['Kalu', 'Lua', 'Oreo'];
+  const petEmojis = { Kalu: '🐹', Lua: '🐭', Oreo: '🐼' };
 
   useEffect(() => {
     fetchPets();
@@ -102,7 +102,7 @@ export default function PetJournal({ currentUser }) {
           <span className="card-title-icon">🐹</span>
           Diario de Mascotas
         </h2>
-        <span className="card-subtitle">Historial de salud, cuidados y peso de Kalu y Oreo.</span>
+        <span className="card-subtitle">Historial de salud, cuidados y peso de Kalu, Lua y Oreo.</span>
       </div>
 
       {/* Selector de Mascota */}

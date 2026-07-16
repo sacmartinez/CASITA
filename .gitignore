@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+db.json
+db.json.tmp
+*.log
+.system_generated/
+.agents/
+walkthrough.md
+implementation_plan.md
+task.md
+clean-db.js

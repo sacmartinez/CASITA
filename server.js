@@ -18,18 +18,7 @@ app.use(cors());
 app.use(express.json());
 
 // --- CONFIGURACIÓN DE NOTIFICACIONES PUSH ---
-let vapidKeys = db.getVapidKeys();
-if (!vapidKeys) {
-  vapidKeys = webpush.generateVAPIDKeys();
-  db.saveVapidKeys(vapidKeys);
-  console.log('Nuevas claves VAPID generadas y guardadas en la base de datos.');
-}
-
-webpush.setVapidDetails(
-  'mailto:casitahub@example.com',
-  vapidKeys.publicKey,
-  vapidKeys.privateKey
-);
+// Se inicializará dinámicamente en startServer() tras sincronizar la base de datos de MongoDB.
 
 // Helper para obtener el nombre del otro usuario
 const getOtherUser = (user) => user === 'Ismael' ? 'Sandra' : 'Ismael';
@@ -874,7 +863,22 @@ if (fs.existsSync(distPath)) {
 // --- ARRANCAR SERVIDOR ---
 async function startServer() {
   try {
+    // 1. Sincronizar base de datos desde MongoDB Atlas antes de cualquier operación
     await syncFromMongoDB();
+    
+    // 2. Configurar claves VAPID para notificaciones push una vez cargada la base de datos
+    let vapidKeys = db.getVapidKeys();
+    if (!vapidKeys) {
+      vapidKeys = webpush.generateVAPIDKeys();
+      db.saveVapidKeys(vapidKeys);
+      console.log('Nuevas claves VAPID generadas y guardadas en la base de datos.');
+    }
+    webpush.setVapidDetails(
+      'mailto:casitahub@example.com',
+      vapidKeys.publicKey,
+      vapidKeys.privateKey
+    );
+    console.log('🔑 Claves VAPID configuradas con éxito.');
   } catch (err) {
     console.error('Error al sincronizar base de datos antes de arrancar:', err);
   }

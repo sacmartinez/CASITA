@@ -94,9 +94,16 @@ export default function WarrantiesManager({ currentUser }) {
     try {
       let imagesBase64 = [];
       if (wImageFiles && wImageFiles.length > 0) {
-        imagesBase64 = await Promise.all(
-          wImageFiles.map(file => compressImage(file))
-        );
+        const compressPromises = wImageFiles.map(async (file) => {
+          try {
+            return await compressImage(file);
+          } catch (err) {
+            console.error('Error al comprimir imagen de garantía:', file.name, err);
+            return null;
+          }
+        });
+        const results = await Promise.all(compressPromises);
+        imagesBase64 = results.filter(img => img !== null);
       }
 
       const res = await fetch('/api/warranties', {
@@ -117,9 +124,12 @@ export default function WarrantiesManager({ currentUser }) {
         setWImageFiles([]);
         setWImageNames('');
         fetchData();
+      } else {
+        alert('Error al guardar la garantía. Inténtalo de nuevo.');
       }
     } catch (err) {
       console.error(err);
+      alert('Error de conexión o de procesamiento de imágenes al guardar la garantía.');
     } finally {
       setSubmittingW(false);
     }
@@ -147,9 +157,16 @@ export default function WarrantiesManager({ currentUser }) {
     try {
       let imagesBase64 = [];
       if (mImageFiles && mImageFiles.length > 0) {
-        imagesBase64 = await Promise.all(
-          mImageFiles.map(file => compressImage(file))
-        );
+        const compressPromises = mImageFiles.map(async (file) => {
+          try {
+            return await compressImage(file);
+          } catch (err) {
+            console.error('Error al comprimir imagen de mantenimiento:', file.name, err);
+            return null;
+          }
+        });
+        const results = await Promise.all(compressPromises);
+        imagesBase64 = results.filter(img => img !== null);
       }
 
       const res = await fetch(`/api/maintenance-books/${encodeURIComponent(vehicleName)}/entries`, {
@@ -171,9 +188,12 @@ export default function WarrantiesManager({ currentUser }) {
         setMImageFiles([]);
         setMImageNames('');
         fetchData();
+      } else {
+        alert('Error al guardar el mantenimiento. Inténtalo de nuevo.');
       }
     } catch (err) {
       console.error(err);
+      alert('Error de conexión o de procesamiento de imágenes al guardar el mantenimiento.');
     } finally {
       setSubmittingM(false);
     }
@@ -253,9 +273,16 @@ export default function WarrantiesManager({ currentUser }) {
             th { background-color: #f9fafb; color: #374151; font-weight: bold; }
             tr:nth-child(even) { background-color: #fcfcfc; }
             .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+            @media print {
+              .no-print { display: none !important; }
+            }
           </style>
         </head>
         <body>
+          <div class="no-print" style="background-color: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; font-family: sans-serif;">
+            <span>💡 Puedes imprimir este documento o guardarlo como PDF usando el botón de la derecha o el menú de tu navegador.</span>
+            <button onclick="window.print()" style="background-color: #2563eb; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">Imprimir / Guardar PDF</button>
+          </div>
           <h1>📄 Inventario de Garantías Generales</h1>
           <div class="subtitle">Casita Hub | Generado el ${new Date().toLocaleDateString('es-ES')}</div>
           <table>
@@ -276,7 +303,6 @@ export default function WarrantiesManager({ currentUser }) {
           <script>
             window.onload = function() {
               window.print();
-              setTimeout(() => { window.close(); }, 500);
             }
           </script>
         </body>
@@ -317,9 +343,16 @@ export default function WarrantiesManager({ currentUser }) {
             th { background-color: #f9fafb; color: #374151; font-weight: bold; }
             tr:nth-child(even) { background-color: #fcfcfc; }
             .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+            @media print {
+              .no-print { display: none !important; }
+            }
           </style>
         </head>
         <body>
+          <div class="no-print" style="background-color: #eff6ff; border: 1px solid #bfdbfe; color: #0f766e; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; font-family: sans-serif;">
+            <span>💡 Puedes imprimir este documento o guardarlo como PDF usando el botón de la derecha o el menú de tu navegador.</span>
+            <button onclick="window.print()" style="background-color: #0f766e; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">Imprimir / Guardar PDF</button>
+          </div>
           <h1>🔧 Libro de Mantenimiento Digital</h1>
           <div class="subtitle">Vehículo: <strong>${vehicleName}</strong> | Generado el ${new Date().toLocaleDateString('es-ES')}</div>
           <table>
@@ -340,7 +373,6 @@ export default function WarrantiesManager({ currentUser }) {
           <script>
             window.onload = function() {
               window.print();
-              setTimeout(() => { window.close(); }, 500);
             }
           </script>
         </body>
@@ -461,31 +493,78 @@ export default function WarrantiesManager({ currentUser }) {
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' }}>
-              {/* File Upload */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <label className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  📷 Subir Factura / Ticket
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        const files = Array.from(e.target.files);
-                        setWImageFiles(files);
-                        setWImageNames(files.map(f => f.name).join(', '));
-                      }
-                    }}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-                {wImageNames && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={wImageNames}>📎 {wImageNames}</span>}
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {/* File Upload Area */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%', maxWidth: '350px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <label className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      📷 Subir Factura / Ticket (Soporta múltiples)
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            const files = Array.from(e.target.files);
+                            setWImageFiles(prev => {
+                              const updated = [...prev, ...files];
+                              setWImageNames(updated.map(f => f.name).join(', '));
+                              return updated;
+                            });
+                            e.target.value = ''; // permitir volver a seleccionar el mismo archivo
+                          }
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                  </div>
+                  {wImageFiles.length > 0 && (
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                      {wImageFiles.map((file, idx) => (
+                        <div key={idx} style={{ position: 'relative', width: '45px', height: '45px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--glass-border)' }}>
+                          <img src={URL.createObjectURL(file)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Preview" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWImageFiles(prev => {
+                                const updated = prev.filter((_, i) => i !== idx);
+                                setWImageNames(updated.map(f => f.name).join(', '));
+                                return updated;
+                              });
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: '1px',
+                              right: '1px',
+                              width: '14px',
+                              height: '14px',
+                              borderRadius: '50%',
+                              background: 'rgba(239, 68, 68, 0.9)',
+                              color: 'white',
+                              border: 'none',
+                              fontSize: '9px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              padding: 0,
+                              lineHeight: 1
+                            }}
+                            title="Eliminar"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-              <button type="submit" className="btn-primario" disabled={submittingW} style={{ padding: '0.45rem 1.2rem', fontSize: '0.78rem' }}>
-                {submittingW ? '💾 Guardando...' : '💾 Registrar Garantía'}
-              </button>
+                <button type="submit" className="btn-primario" disabled={submittingW} style={{ padding: '0.45rem 1.2rem', fontSize: '0.78rem', alignSelf: 'flex-end' }}>
+                  {submittingW ? '💾 Guardando...' : '💾 Registrar Garantía'}
+                </button>
+              </div>
             </div>
           </form>
 
@@ -708,31 +787,78 @@ export default function WarrantiesManager({ currentUser }) {
               maxLength={150}
             />
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' }}>
-              {/* File Upload */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <label className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  📷 Subir Factura / Foto
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        const files = Array.from(e.target.files);
-                        setMImageFiles(files);
-                        setMImageNames(files.map(f => f.name).join(', '));
-                      }
-                    }}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-                {mImageNames && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={mImageNames}>📎 {mImageNames}</span>}
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {/* File Upload Area */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%', maxWidth: '350px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <label className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      📷 Subir Factura / Foto (Soporta múltiples)
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            const files = Array.from(e.target.files);
+                            setMImageFiles(prev => {
+                              const updated = [...prev, ...files];
+                              setMImageNames(updated.map(f => f.name).join(', '));
+                              return updated;
+                            });
+                            e.target.value = ''; // permitir volver a seleccionar el mismo archivo
+                          }
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                  </div>
+                  {mImageFiles.length > 0 && (
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                      {mImageFiles.map((file, idx) => (
+                        <div key={idx} style={{ position: 'relative', width: '45px', height: '45px', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--glass-border)' }}>
+                          <img src={URL.createObjectURL(file)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Preview" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMImageFiles(prev => {
+                                const updated = prev.filter((_, i) => i !== idx);
+                                setMImageNames(updated.map(f => f.name).join(', '));
+                                return updated;
+                              });
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: '1px',
+                              right: '1px',
+                              width: '14px',
+                              height: '14px',
+                              borderRadius: '50%',
+                              background: 'rgba(239, 68, 68, 0.9)',
+                              color: 'white',
+                              border: 'none',
+                              fontSize: '9px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              padding: 0,
+                              lineHeight: 1
+                            }}
+                            title="Eliminar"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-              <button type="submit" className="btn-primario" disabled={submittingM} style={{ padding: '0.45rem 1.2rem', fontSize: '0.78rem' }}>
-                {submittingM ? '💾 Guardando...' : '💾 Registrar Entrada'}
-              </button>
+                <button type="submit" className="btn-primario" disabled={submittingM} style={{ padding: '0.45rem 1.2rem', fontSize: '0.78rem', alignSelf: 'flex-end' }}>
+                  {submittingM ? '💾 Guardando...' : '💾 Registrar Entrada'}
+                </button>
+              </div>
             </div>
           </form>
 

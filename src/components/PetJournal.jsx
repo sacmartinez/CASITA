@@ -115,9 +115,16 @@ export default function PetJournal({ currentUser }) {
             th { background-color: #f9fafb; color: #374151; font-weight: bold; }
             tr:nth-child(even) { background-color: #fcfcfc; }
             .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+            @media print {
+              .no-print { display: none !important; }
+            }
           </style>
         </head>
         <body>
+          <div class="no-print" style="background-color: #fff7ed; border: 1px solid #ffedd5; color: #b45309; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; font-family: sans-serif;">
+            <span>💡 Puedes imprimir este documento o guardarlo como PDF usando el botón de la derecha o el menú de tu navegador.</span>
+            <button onclick="window.print()" style="background-color: #ea580c; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">Imprimir / Guardar PDF</button>
+          </div>
           <h1>🐹 Diario de Mascotas: ${activePet}</h1>
           <div class="subtitle">Historial de salud, observaciones y pesos | Generado el ${new Date().toLocaleDateString('es-ES')}</div>
           <table>
@@ -137,7 +144,6 @@ export default function PetJournal({ currentUser }) {
           <script>
             window.onload = function() {
               window.print();
-              setTimeout(() => { window.close(); }, 500);
             }
           </script>
         </body>

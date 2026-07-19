@@ -249,12 +249,19 @@ export default function WarrantiesManager({ currentUser }) {
 
     const rows = filteredWarranties.map(w => {
       const status = getWarrantyStatus(w.expirationDate);
+      const images = w.imagesBase64 && w.imagesBase64.length > 0
+        ? w.imagesBase64
+        : (w.imageBase64 ? [w.imageBase64] : []);
+      const imagesHtml = images.map(img => `
+        <img src="${img}" style="max-width: 90px; max-height: 90px; object-fit: contain; margin: 3px; border: 1px solid #e5e7eb; border-radius: 4px; vertical-align: middle;" />
+      `).join('');
       return `
         <tr>
           <td>${w.name}</td>
           <td>${new Date(w.purchaseDate).toLocaleDateString('es-ES')}</td>
           <td>${new Date(w.expirationDate).toLocaleDateString('es-ES')}</td>
           <td>${status.text}</td>
+          <td>${imagesHtml || '-'}</td>
           <td>${w.addedBy}</td>
         </tr>
       `;
@@ -273,6 +280,8 @@ export default function WarrantiesManager({ currentUser }) {
             th { background-color: #f9fafb; color: #374151; font-weight: bold; }
             tr:nth-child(even) { background-color: #fcfcfc; }
             .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+            img { page-break-inside: avoid; break-inside: avoid; }
+            tr { page-break-inside: avoid; break-inside: avoid; }
             @media print {
               .no-print { display: none !important; }
             }
@@ -292,11 +301,12 @@ export default function WarrantiesManager({ currentUser }) {
                 <th>Fecha Compra</th>
                 <th>Garantía Hasta</th>
                 <th>Estado</th>
+                <th>Factura / Ticket</th>
                 <th>Registrado Por</th>
               </tr>
             </thead>
             <tbody>
-              ${rows || '<tr><td colspan="5" style="text-align:center;">Sin garantías registradas</td></tr>'}
+              ${rows || '<tr><td colspan="6" style="text-align:center;">Sin garantías registradas</td></tr>'}
             </tbody>
           </table>
           <div class="footer">Generado por Casita Hub - Espacio Compartido</div>
@@ -319,12 +329,19 @@ export default function WarrantiesManager({ currentUser }) {
     const rows = currentVehicleHistory.map(entry => {
       const typeLabel = entry.type === 'revision' ? 'Revisión' : entry.type === 'reparacion' ? 'Reparación' : 'Otro';
       const kmText = (entry.km !== null && entry.km !== undefined) ? `${entry.km.toLocaleString('es-ES')} km` : '-';
+      const images = entry.imagesBase64 && entry.imagesBase64.length > 0
+        ? entry.imagesBase64
+        : (entry.imageBase64 ? [entry.imageBase64] : []);
+      const imagesHtml = images.map(img => `
+        <img src="${img}" style="max-width: 90px; max-height: 90px; object-fit: contain; margin: 3px; border: 1px solid #e5e7eb; border-radius: 4px; vertical-align: middle;" />
+      `).join('');
       return `
         <tr>
           <td>${new Date(entry.date).toLocaleDateString('es-ES')}</td>
           <td>${kmText}</td>
           <td>${typeLabel}</td>
           <td>${entry.description || '-'}</td>
+          <td>${imagesHtml || '-'}</td>
           <td>${entry.addedBy}</td>
         </tr>
       `;
@@ -343,6 +360,8 @@ export default function WarrantiesManager({ currentUser }) {
             th { background-color: #f9fafb; color: #374151; font-weight: bold; }
             tr:nth-child(even) { background-color: #fcfcfc; }
             .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+            img { page-break-inside: avoid; break-inside: avoid; }
+            tr { page-break-inside: avoid; break-inside: avoid; }
             @media print {
               .no-print { display: none !important; }
             }
@@ -362,11 +381,12 @@ export default function WarrantiesManager({ currentUser }) {
                 <th>Kilómetros</th>
                 <th>Tipo Intervención</th>
                 <th>Observaciones / Descripción</th>
+                <th>Factura / Foto</th>
                 <th>Registrado Por</th>
               </tr>
             </thead>
             <tbody>
-              ${rows || '<tr><td colspan="5" style="text-align:center;">Sin mantenimientos registrados</td></tr>'}
+              ${rows || '<tr><td colspan="6" style="text-align:center;">Sin mantenimientos registrados</td></tr>'}
             </tbody>
           </table>
           <div class="footer">Generado por Casita Hub - Espacio Compartido</div>

@@ -219,6 +219,132 @@ export default function WarrantiesManager({ currentUser }) {
     return { text: `🟢 ${textRemaining}`, color: '#34d399', bg: 'rgba(52, 211, 153, 0.12)' };
   };
 
+  const handleExportWarrantiesPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return alert('Por favor, permite las ventanas emergentes en tu navegador para poder descargar el PDF.');
+
+    const rows = filteredWarranties.map(w => {
+      const status = getWarrantyStatus(w.expirationDate);
+      return `
+        <tr>
+          <td>${w.name}</td>
+          <td>${new Date(w.purchaseDate).toLocaleDateString('es-ES')}</td>
+          <td>${new Date(w.expirationDate).toLocaleDateString('es-ES')}</td>
+          <td>${status.text}</td>
+          <td>${w.addedBy}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const htmlContent = `
+      <html>
+        <head>
+          <title>Listado de Garantías - Casita Hub</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 25px; color: #333; }
+            h1 { margin-bottom: 5px; color: #1e3a8a; }
+            .subtitle { font-size: 14px; color: #666; margin-bottom: 25px; border-bottom: 2px solid #f3f4f6; padding-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #e5e7eb; padding: 12px 10px; text-align: left; font-size: 13px; }
+            th { background-color: #f9fafb; color: #374151; font-weight: bold; }
+            tr:nth-child(even) { background-color: #fcfcfc; }
+            .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <h1>📄 Inventario de Garantías Generales</h1>
+          <div class="subtitle">Casita Hub | Generado el ${new Date().toLocaleDateString('es-ES')}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Fecha Compra</th>
+                <th>Garantía Hasta</th>
+                <th>Estado</th>
+                <th>Registrado Por</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="5" style="text-align:center;">Sin garantías registradas</td></tr>'}
+            </tbody>
+          </table>
+          <div class="footer">Generado por Casita Hub - Espacio Compartido</div>
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(() => { window.close(); }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
+  const handleExportMaintenancePDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return alert('Por favor, permite las ventanas emergentes en tu navegador para poder descargar el PDF.');
+
+    const rows = currentVehicleHistory.map(entry => {
+      const typeLabel = entry.type === 'revision' ? 'Revisión' : entry.type === 'reparacion' ? 'Reparación' : 'Otro';
+      return `
+        <tr>
+          <td>${new Date(entry.date).toLocaleDateString('es-ES')}</td>
+          <td>${entry.km.toLocaleString('es-ES')} km</td>
+          <td>${typeLabel}</td>
+          <td>${entry.description || '-'}</td>
+          <td>${entry.addedBy}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const htmlContent = `
+      <html>
+        <head>
+          <title>Libro de Mantenimiento - ${vehicleName}</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 25px; color: #333; }
+            h1 { margin-bottom: 5px; color: #0f766e; }
+            .subtitle { font-size: 14px; color: #666; margin-bottom: 25px; border-bottom: 2px solid #f3f4f6; padding-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #e5e7eb; padding: 12px 10px; text-align: left; font-size: 13px; }
+            th { background-color: #f9fafb; color: #374151; font-weight: bold; }
+            tr:nth-child(even) { background-color: #fcfcfc; }
+            .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <h1>🔧 Libro de Mantenimiento Digital</h1>
+          <div class="subtitle">Vehículo: <strong>${vehicleName}</strong> | Generado el ${new Date().toLocaleDateString('es-ES')}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Kilómetros</th>
+                <th>Tipo Intervención</th>
+                <th>Observaciones / Descripción</th>
+                <th>Registrado Por</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="5" style="text-align:center;">Sin mantenimientos registrados</td></tr>'}
+            </tbody>
+          </table>
+          <div class="footer">Generado por Casita Hub - Espacio Compartido</div>
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(() => { window.close(); }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   const getMaintenanceTypeLabel = (type) => {
     switch (type) {
       case 'revision': return '🛠️ Revisión';
@@ -369,9 +495,21 @@ export default function WarrantiesManager({ currentUser }) {
           </div>
 
           {/* Listado */}
-          <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.4rem' }}>
-            Listado de Compras y Garantías
-          </h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 0.8rem 0', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.4rem' }}>
+            <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+              Listado de Compras y Garantías
+            </h4>
+            {filteredWarranties.length > 0 && (
+              <button 
+                type="button"
+                onClick={handleExportWarrantiesPDF}
+                className="btn-secondary"
+                style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+              >
+                📥 Exportar PDF
+              </button>
+            )}
+          </div>
 
           {filteredWarranties.length === 0 ? (
             <div className="empty-state" style={{ padding: '2rem 0' }}>
@@ -580,9 +718,21 @@ export default function WarrantiesManager({ currentUser }) {
           </form>
 
           {/* Historial Timeline */}
-          <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.4rem' }}>
-            Historial de Mantenimientos
-          </h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 0.8rem 0', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.4rem' }}>
+            <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+              Historial de Mantenimientos
+            </h4>
+            {currentVehicleHistory.length > 0 && (
+              <button 
+                type="button"
+                onClick={handleExportMaintenancePDF}
+                className="btn-secondary"
+                style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+              >
+                📥 Exportar PDF
+              </button>
+            )}
+          </div>
 
           {currentVehicleHistory.length === 0 ? (
             <div className="empty-state" style={{ padding: '2rem 0' }}>

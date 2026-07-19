@@ -89,6 +89,65 @@ export default function PetJournal({ currentUser }) {
     return `${diffDays} día${diffDays !== 1 ? 's' : ''}`;
   };
 
+  const handleExportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return alert('Por favor, permite las ventanas emergentes en tu navegador para poder descargar el PDF.');
+
+    const logRows = currentPetData.medicalLog.map(log => `
+      <tr>
+        <td>${new Date(log.date).toLocaleDateString('es-ES')}</td>
+        <td>${log.title}</td>
+        <td>${log.note ? log.note.replace('Peso: ', '') : '-'}</td>
+        <td>${log.addedBy || 'Casa'}</td>
+      </tr>
+    `).join('');
+
+    const htmlContent = `
+      <html>
+        <head>
+          <title>Diario de Mascotas - ${activePet}</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 25px; color: #333; }
+            h1 { margin-bottom: 5px; color: #b84b00; display: flex; align-items: center; gap: 8px; }
+            .subtitle { font-size: 14px; color: #666; margin-bottom: 25px; border-bottom: 2px solid #f3f4f6; padding-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #e5e7eb; padding: 12px 10px; text-align: left; font-size: 13px; }
+            th { background-color: #f9fafb; color: #374151; font-weight: bold; }
+            tr:nth-child(even) { background-color: #fcfcfc; }
+            .footer { margin-top: 40px; font-size: 11px; color: #999; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <h1>🐹 Diario de Mascotas: ${activePet}</h1>
+          <div class="subtitle">Historial de salud, observaciones y pesos | Generado el ${new Date().toLocaleDateString('es-ES')}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Observación / Cuidado</th>
+                <th>Peso registrado</th>
+                <th>Registrado Por</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${logRows || '<tr><td colspan="4" style="text-align:center;">Sin observaciones registradas</td></tr>'}
+            </tbody>
+          </table>
+          <div class="footer">Generado por Casita Hub - Espacio Compartido</div>
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(() => { window.close(); }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
+
   if (loading || !pets) {
     return <div className="glass-card"><div className="empty-state"><span>Cargando diario de mascotas...</span></div></div>;
   }
@@ -187,9 +246,21 @@ export default function PetJournal({ currentUser }) {
       </form>
 
       {/* Historial de Observaciones/Cuidados */}
-      <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.4rem' }}>
-        📅 Historial de Observaciones y Cuidados
-      </h4>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 0.8rem 0', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.4rem' }}>
+        <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+          📅 Historial de Observaciones y Cuidados
+        </h4>
+        {currentPetData.medicalLog.length > 0 && (
+          <button 
+            type="button"
+            onClick={handleExportPDF}
+            className="btn-secondary"
+            style={{ padding: '0.25rem 0.6rem', fontSize: '0.72rem', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+          >
+            📥 Exportar PDF
+          </button>
+        )}
+      </div>
 
       {currentPetData.medicalLog.length === 0 ? (
         <div className="empty-state" style={{ padding: '2rem 0' }}>

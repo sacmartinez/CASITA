@@ -46,8 +46,8 @@ export default function WarrantiesManager({ currentUser }) {
   const [wName, setWName] = useState('');
   const [wPurchaseDate, setWPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
   const [wExpirationDate, setWExpirationDate] = useState('');
-  const [wImageFile, setWImageFile] = useState(null);
-  const [wImageName, setWImageName] = useState('');
+  const [wImageFiles, setWImageFiles] = useState([]);
+  const [wImageNames, setWImageNames] = useState('');
   const [submittingW, setSubmittingW] = useState(false);
 
   // Formulario Mantenimiento (Moto / Coche)
@@ -55,8 +55,8 @@ export default function WarrantiesManager({ currentUser }) {
   const [mKm, setMKm] = useState('');
   const [mType, setMType] = useState('revision'); // 'revision' | 'reparacion' | 'otro'
   const [mDescription, setMDescription] = useState('');
-  const [mImageFile, setMImageFile] = useState(null);
-  const [mImageName, setMImageName] = useState('');
+  const [mImageFiles, setMImageFiles] = useState([]);
+  const [mImageNames, setMImageNames] = useState('');
   const [submittingM, setSubmittingM] = useState(false);
 
   // Buscadores
@@ -92,9 +92,11 @@ export default function WarrantiesManager({ currentUser }) {
     setSubmittingW(true);
 
     try {
-      let imageBase64 = null;
-      if (wImageFile) {
-        imageBase64 = await compressImage(wImageFile);
+      let imagesBase64 = [];
+      if (wImageFiles && wImageFiles.length > 0) {
+        imagesBase64 = await Promise.all(
+          wImageFiles.map(file => compressImage(file))
+        );
       }
 
       const res = await fetch('/api/warranties', {
@@ -104,7 +106,7 @@ export default function WarrantiesManager({ currentUser }) {
           name: wName.trim(),
           purchaseDate: wPurchaseDate,
           expirationDate: wExpirationDate,
-          imageBase64,
+          imagesBase64,
           addedBy: currentUser
         })
       });
@@ -112,8 +114,8 @@ export default function WarrantiesManager({ currentUser }) {
       if (res.ok) {
         setWName('');
         setWExpirationDate('');
-        setWImageFile(null);
-        setWImageName('');
+        setWImageFiles([]);
+        setWImageNames('');
         fetchData();
       }
     } catch (err) {
@@ -137,15 +139,17 @@ export default function WarrantiesManager({ currentUser }) {
   // Guardar Entrada de Mantenimiento (Moto / Coche)
   const handleAddMaintenance = async (e) => {
     e.preventDefault();
-    if (!mDate || !mKm || !mType) return;
+    if (!mDate || !mType) return;
     setSubmittingM(true);
 
     const vehicleName = activeTab === 'moto' ? 'Benelli BN 125' : activeCar;
 
     try {
-      let imageBase64 = null;
-      if (mImageFile) {
-        imageBase64 = await compressImage(mImageFile);
+      let imagesBase64 = [];
+      if (mImageFiles && mImageFiles.length > 0) {
+        imagesBase64 = await Promise.all(
+          mImageFiles.map(file => compressImage(file))
+        );
       }
 
       const res = await fetch(`/api/maintenance-books/${encodeURIComponent(vehicleName)}/entries`, {
@@ -153,10 +157,10 @@ export default function WarrantiesManager({ currentUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date: mDate,
-          km: parseInt(mKm),
+          km: mKm !== '' ? parseInt(mKm) : null,
           type: mType,
           description: mDescription.trim(),
-          imageBase64,
+          imagesBase64,
           addedBy: currentUser
         })
       });
@@ -164,8 +168,8 @@ export default function WarrantiesManager({ currentUser }) {
       if (res.ok) {
         setMKm('');
         setMDescription('');
-        setMImageFile(null);
-        setMImageName('');
+        setMImageFiles([]);
+        setMImageNames('');
         fetchData();
       }
     } catch (err) {
@@ -288,10 +292,11 @@ export default function WarrantiesManager({ currentUser }) {
 
     const rows = currentVehicleHistory.map(entry => {
       const typeLabel = entry.type === 'revision' ? 'Revisión' : entry.type === 'reparacion' ? 'Reparación' : 'Otro';
+      const kmText = (entry.km !== null && entry.km !== undefined) ? `${entry.km.toLocaleString('es-ES')} km` : '-';
       return `
         <tr>
           <td>${new Date(entry.date).toLocaleDateString('es-ES')}</td>
-          <td>${entry.km.toLocaleString('es-ES')} km</td>
+          <td>${kmText}</td>
           <td>${typeLabel}</td>
           <td>${entry.description || '-'}</td>
           <td>${entry.addedBy}</td>
@@ -464,16 +469,18 @@ export default function WarrantiesManager({ currentUser }) {
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={(e) => {
-                      if (e.target.files?.[0]) {
-                        setWImageFile(e.target.files[0]);
-                        setWImageName(e.target.files[0].name);
+                      if (e.target.files && e.target.files.length > 0) {
+                        const files = Array.from(e.target.files);
+                        setWImageFiles(files);
+                        setWImageNames(files.map(f => f.name).join(', '));
                       }
                     }}
                     style={{ display: 'none' }}
                   />
                 </label>
-                {wImageName && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📎 {wImageName}</span>}
+                {wImageNames && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={wImageNames}>📎 {wImageNames}</span>}
               </div>
 
               <button type="submit" className="btn-primario" disabled={submittingW} style={{ padding: '0.45rem 1.2rem', fontSize: '0.78rem' }}>
@@ -536,22 +543,33 @@ export default function WarrantiesManager({ currentUser }) {
                     }}
                   >
                     <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', flex: 1 }}>
-                      {/* Factura Thumbnail */}
-                      {w.imageBase64 ? (
-                        <div 
-                          onClick={() => {
-                            setViewerImage(w.imageBase64);
-                            setViewerTitle(w.name);
-                          }}
-                          style={{ width: '45px', height: '45px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', cursor: 'pointer', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <img src={w.imageBase64} alt="Factura" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        </div>
-                      ) : (
-                        <div style={{ width: '45px', height: '45px', borderRadius: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', color: 'var(--text-muted)' }}>
-                          📄
-                        </div>
-                      )}
+                      {/* Facturas Thumbnail Grid */}
+                      {(() => {
+                        const images = w.imagesBase64 && w.imagesBase64.length > 0
+                          ? w.imagesBase64
+                          : (w.imageBase64 ? [w.imageBase64] : []);
+                        return (
+                          <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', maxWidth: '150px' }}>
+                            {images.map((imgBase64, idx) => (
+                              <div
+                                key={idx}
+                                onClick={() => {
+                                  setViewerImage(imgBase64);
+                                  setViewerTitle(`${w.name} (${idx + 1}/${images.length})`);
+                                }}
+                                style={{ width: '40px', height: '40px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', cursor: 'pointer', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              >
+                                <img src={imgBase64} alt={`Factura ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              </div>
+                            ))}
+                            {images.length === 0 && (
+                              <div style={{ width: '40px', height: '40px', borderRadius: '6px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', color: 'var(--text-muted)' }}>
+                                📄
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                         <span style={{ fontSize: '0.88rem', color: '#ffffff', fontWeight: 550 }}>{w.name}</span>
@@ -657,11 +675,10 @@ export default function WarrantiesManager({ currentUser }) {
                     type="number"
                     value={mKm}
                     onChange={(e) => setMKm(e.target.value)}
-                    placeholder="Ej: 15400"
+                    placeholder="Ej: 15400 (Opcional)"
                     min="0"
                     className="custom-input"
                     style={{ fontSize: '0.78rem', padding: '0.4rem' }}
-                    required
                   />
                 </div>
               </div>
@@ -699,16 +716,18 @@ export default function WarrantiesManager({ currentUser }) {
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={(e) => {
-                      if (e.target.files?.[0]) {
-                        setMImageFile(e.target.files[0]);
-                        setMImageName(e.target.files[0].name);
+                      if (e.target.files && e.target.files.length > 0) {
+                        const files = Array.from(e.target.files);
+                        setMImageFiles(files);
+                        setMImageNames(files.map(f => f.name).join(', '));
                       }
                     }}
                     style={{ display: 'none' }}
                   />
                 </label>
-                {mImageName && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📎 {mImageName}</span>}
+                {mImageNames && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={mImageNames}>📎 {mImageNames}</span>}
               </div>
 
               <button type="submit" className="btn-primario" disabled={submittingM} style={{ padding: '0.45rem 1.2rem', fontSize: '0.78rem' }}>
@@ -780,17 +799,19 @@ export default function WarrantiesManager({ currentUser }) {
                     </div>
 
                     <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                      <span style={{ 
-                        fontSize: '0.72rem', 
-                        padding: '0.2rem 0.5rem', 
-                        borderRadius: '6px', 
-                        background: 'rgba(255, 255, 255, 0.05)', 
-                        border: '1px solid var(--glass-border)',
-                        color: '#ffffff', 
-                        fontWeight: 700 
-                      }}>
-                        🚗 {entry.km.toLocaleString('es-ES')} km
-                      </span>
+                      {entry.km !== null && entry.km !== undefined && (
+                        <span style={{ 
+                          fontSize: '0.72rem', 
+                          padding: '0.2rem 0.5rem', 
+                          borderRadius: '6px', 
+                          background: 'rgba(255, 255, 255, 0.05)', 
+                          border: '1px solid var(--glass-border)',
+                          color: '#ffffff', 
+                          fontWeight: 700 
+                        }}>
+                          🚗 {entry.km.toLocaleString('es-ES')} km
+                        </span>
+                      )}
                       <button
                         onClick={() => handleDeleteMaintenance(vehicleName, entry.id)}
                         className="btn-secondary"
@@ -808,30 +829,40 @@ export default function WarrantiesManager({ currentUser }) {
                     </p>
                   )}
 
-                  {/* Factura Adjunta */}
-                  {entry.imageBase64 && (
-                    <div 
-                      onClick={() => {
-                        setViewerImage(entry.imageBase64);
-                        setViewerTitle(`${vehicleName} - ${new Date(entry.date).toLocaleDateString('es-ES')}`);
-                      }}
-                      style={{ 
-                        marginTop: '0.4rem',
-                        width: '100%', 
-                        maxHeight: '120px', 
-                        borderRadius: '8px', 
-                        border: '1px solid var(--glass-border)', 
-                        overflow: 'hidden', 
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(255,255,255,0.01)'
-                      }}
-                    >
-                      <img src={entry.imageBase64} alt="Factura de mantenimiento" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </div>
-                  )}
+                  {/* Facturas Adjuntas Grid */}
+                  {(() => {
+                    const mImages = entry.imagesBase64 && entry.imagesBase64.length > 0
+                      ? entry.imagesBase64
+                      : (entry.imageBase64 ? [entry.imageBase64] : []);
+                    if (mImages.length === 0) return null;
+                    return (
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.4rem' }}>
+                        {mImages.map((imgBase64, idx) => (
+                          <div 
+                            key={idx}
+                            onClick={() => {
+                              setViewerImage(imgBase64);
+                              setViewerTitle(`${vehicleName} - ${new Date(entry.date).toLocaleDateString('es-ES')} (${idx + 1}/${mImages.length})`);
+                            }}
+                            style={{ 
+                              width: '70px', 
+                              height: '70px', 
+                              borderRadius: '8px', 
+                              border: '1px solid var(--glass-border)', 
+                              overflow: 'hidden', 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              background: 'rgba(255,255,255,0.01)'
+                            }}
+                          >
+                            <img src={imgBase64} alt={`Factura ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

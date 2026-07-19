@@ -860,11 +860,11 @@ app.get('/api/warranties', (req, res) => {
 
 app.post('/api/warranties', async (req, res) => {
   try {
-    const { name, purchaseDate, expirationDate, imageBase64, addedBy } = req.body;
+    const { name, purchaseDate, expirationDate, imagesBase64, addedBy } = req.body;
     if (!name || !purchaseDate || !expirationDate || !addedBy) {
       return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
-    const warranty = db.addWarranty(name, purchaseDate, expirationDate, imageBase64, addedBy);
+    const warranty = db.addWarranty(name, purchaseDate, expirationDate, imagesBase64, addedBy);
 
     await sendPushNotification(
       getOtherUser(addedBy),
@@ -899,17 +899,18 @@ app.get('/api/maintenance-books', (req, res) => {
 app.post('/api/maintenance-books/:vehicle/entries', async (req, res) => {
   try {
     const vehicle = req.params.vehicle;
-    const { date, km, type, description, imageBase64, addedBy } = req.body;
-    if (!date || !km || !type || !addedBy) {
+    const { date, km, type, description, imagesBase64, addedBy } = req.body;
+    if (!date || !type || !addedBy) {
       return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
-    const entry = db.addMaintenanceEntry(vehicle, date, km, type, description, imageBase64, addedBy);
+    const entry = db.addMaintenanceEntry(vehicle, date, km, type, description, imagesBase64, addedBy);
 
     const typeLabel = type === 'revision' ? 'Revisión' : type === 'reparacion' ? 'Reparación' : 'Mantenimiento';
+    const kmLabel = km ? ` (${km} km)` : '';
     await sendPushNotification(
       getOtherUser(addedBy),
       `🔧 Mantenimiento de ${vehicle}`,
-      `${addedBy} ha registrado: ${typeLabel} (${km} km)`
+      `${addedBy} ha registrado: ${typeLabel}${kmLabel}`
     );
 
     res.status(201).json(entry);

@@ -691,7 +691,7 @@ export const db = {
     if (!data.warranties) data.warranties = [];
     return data.warranties;
   },
-  addWarranty: (name, purchaseDate, expirationDate, imageBase64, addedBy) => {
+  addWarranty: (name, purchaseDate, expirationDate, imagesBase64, addedBy) => {
     const data = readDB();
     if (!data.warranties) data.warranties = [];
     const newWarranty = {
@@ -699,7 +699,7 @@ export const db = {
       name,
       purchaseDate,
       expirationDate,
-      imageBase64: imageBase64 || null,
+      imagesBase64: Array.isArray(imagesBase64) ? imagesBase64 : [],
       addedBy,
       createdAt: new Date().toISOString()
     };
@@ -739,25 +739,26 @@ export const db = {
     }
     return data.maintenanceBooks;
   },
-  addMaintenanceEntry: (vehicleName, date, km, type, description, imageBase64, addedBy) => {
+  addMaintenanceEntry: (vehicleName, date, km, type, description, imagesBase64, addedBy) => {
     const data = readDB();
     if (!data.maintenanceBooks) data.maintenanceBooks = {};
     if (!data.maintenanceBooks[vehicleName]) {
       data.maintenanceBooks[vehicleName] = [];
     }
+    const cleanKm = (km !== undefined && km !== null && km !== '') ? parseInt(km) : null;
     const newEntry = {
       id: Date.now() + Math.floor(Math.random() * 1000),
       date,
-      km: parseInt(km) || 0,
+      km: cleanKm,
       type, // 'revision' | 'reparacion' | 'otro'
       description: description || '',
-      imageBase64: imageBase64 || null,
+      imagesBase64: Array.isArray(imagesBase64) ? imagesBase64 : [],
       addedBy,
       createdAt: new Date().toISOString()
     };
     data.maintenanceBooks[vehicleName].push(newEntry);
     // Ordenar de más reciente a más antiguo por fecha y km
-    data.maintenanceBooks[vehicleName].sort((a, b) => new Date(b.date) - new Date(a.date) || b.km - a.km);
+    data.maintenanceBooks[vehicleName].sort((a, b) => new Date(b.date) - new Date(a.date) || (b.km || 0) - (a.km || 0));
     writeDB(data);
     return newEntry;
   },

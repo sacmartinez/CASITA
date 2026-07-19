@@ -848,6 +848,87 @@ app.post('/api/maintenance', async (req, res) => {
     res.status(500).json({ error: 'Error al añadir registro de mantenimiento' });
   }
 });
+
+// --- APARTADO GARANTÍAS Y MANTENIMIENTO VEHÍCULOS ---
+app.get('/api/warranties', (req, res) => {
+  try {
+    res.json(db.getWarranties());
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener garantías' });
+  }
+});
+
+app.post('/api/warranties', async (req, res) => {
+  try {
+    const { name, purchaseDate, expirationDate, imageBase64, addedBy } = req.body;
+    if (!name || !purchaseDate || !expirationDate || !addedBy) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios' });
+    }
+    const warranty = db.addWarranty(name, purchaseDate, expirationDate, imageBase64, addedBy);
+
+    await sendPushNotification(
+      getOtherUser(addedBy),
+      '📄 Nueva Garantía',
+      `${addedBy} ha guardado la garantía de: ${name}`
+    );
+
+    res.status(201).json(warranty);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al registrar garantía' });
+  }
+});
+
+app.delete('/api/warranties/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    db.deleteWarranty(id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al borrar garantía' });
+  }
+});
+
+app.get('/api/maintenance-books', (req, res) => {
+  try {
+    res.json(db.getMaintenanceBooks());
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener libros de mantenimiento' });
+  }
+});
+
+app.post('/api/maintenance-books/:vehicle/entries', async (req, res) => {
+  try {
+    const vehicle = req.params.vehicle;
+    const { date, km, type, description, imageBase64, addedBy } = req.body;
+    if (!date || !km || !type || !addedBy) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios' });
+    }
+    const entry = db.addMaintenanceEntry(vehicle, date, km, type, description, imageBase64, addedBy);
+
+    const typeLabel = type === 'revision' ? 'Revisión' : type === 'reparacion' ? 'Reparación' : 'Mantenimiento';
+    await sendPushNotification(
+      getOtherUser(addedBy),
+      `🔧 Mantenimiento de ${vehicle}`,
+      `${addedBy} ha registrado: ${typeLabel} (${km} km)`
+    );
+
+    res.status(201).json(entry);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al registrar mantenimiento de vehículo' });
+  }
+});
+
+app.delete('/api/maintenance-books/:vehicle/entries/:id', (req, res) => {
+  try {
+    const vehicle = req.params.vehicle;
+    const id = parseInt(req.params.id);
+    db.deleteMaintenanceEntry(vehicle, id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al borrar mantenimiento de vehículo' });
+  }
+});
+
 // --- SERVIR FRONTEND EN PRODUCCIÓN ---
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {

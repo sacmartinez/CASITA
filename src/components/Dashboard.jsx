@@ -18,21 +18,24 @@ function Dashboard({ currentUser, onNavigate }) {
   const [tasks, setTasks] = useState([]);
   const [care, setCare] = useState(null);
   const [planning, setPlanning] = useState([]);
+  const [warranties, setWarranties] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [shopRes, taskRes, careRes, planRes] = await Promise.all([
+        const [shopRes, taskRes, careRes, planRes, wRes] = await Promise.all([
           fetch(`${API_BASE}/shopping`),
           fetch(`${API_BASE}/tasks`),
           fetch(`${API_BASE}/care`),
           fetch(`${API_BASE}/planning`),
+          fetch(`${API_BASE}/warranties`),
         ]);
         setShopping(await shopRes.json());
         setTasks(await taskRes.json());
         setCare(await careRes.json());
         setPlanning(await planRes.json());
+        setWarranties(await wRes.json());
       } catch (e) {
         console.error('Error cargando datos del dashboard', e);
       } finally {
@@ -222,6 +225,25 @@ function Dashboard({ currentUser, onNavigate }) {
                 </span>
               </p>
             </div>
+          </div>
+          <span className="dash-card-arrow">›</span>
+        </button>
+
+        {/* Card Garantías */}
+        <button className="dash-card dash-card--warranties" onClick={() => onNavigate('warranties')} style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(37, 99, 235, 0.08) 100%)' }}>
+          <div className="dash-card-icon">📄</div>
+          <div className="dash-card-content">
+            <h3 className="dash-card-title">Garantías y Vehículos</h3>
+            {warranties.length === 0 ? (
+              <p className="dash-card-muted">Sin garantías registradas</p>
+            ) : (
+              <p className="dash-card-count" style={{ fontSize: '1.05rem', color: '#60a5fa', fontWeight: '600' }}>
+                {warranties.length} garantía{warranties.length !== 1 ? 's' : ''} activa{warranties.length !== 1 ? 's' : ''}
+              </p>
+            )}
+            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.3rem', display: 'block' }}>
+              Incluye libro de mantenimiento
+            </span>
           </div>
           <span className="dash-card-arrow">›</span>
         </button>

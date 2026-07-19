@@ -13,6 +13,8 @@ import RecipeBook from './components/RecipeBook';
 import PetJournal from './components/PetJournal';
 import MaintenanceLog from './components/MaintenanceLog';
 import StatsDashboard from './components/StatsDashboard';
+import WarrantiesManager from './components/WarrantiesManager';
+
 
 function App() {
   const [currentUser, setCurrentUser] = useState(() => {
@@ -111,6 +113,13 @@ function App() {
           <div style={{ width: '100%' }}>
             <FridgeNotes currentUser={currentUser} />
           </div>
+        </div>
+      )}
+
+      {/* Garantías y Mantenimiento de Vehículos */}
+      {activeTab === 'warranties' && (
+        <div style={{ padding: '0 1rem 1.5rem 1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
+          <WarrantiesManager currentUser={currentUser} />
         </div>
       )}
 

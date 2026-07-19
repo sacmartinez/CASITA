@@ -683,5 +683,89 @@ export const db = {
     data.tickets.push(newTicket);
     writeDB(data);
     return newTicket;
+  },
+
+  // --- GARANTÍAS ---
+  getWarranties: () => {
+    const data = readDB();
+    if (!data.warranties) data.warranties = [];
+    return data.warranties;
+  },
+  addWarranty: (name, purchaseDate, expirationDate, imageBase64, addedBy) => {
+    const data = readDB();
+    if (!data.warranties) data.warranties = [];
+    const newWarranty = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      name,
+      purchaseDate,
+      expirationDate,
+      imageBase64: imageBase64 || null,
+      addedBy,
+      createdAt: new Date().toISOString()
+    };
+    data.warranties.push(newWarranty);
+    writeDB(data);
+    return newWarranty;
+  },
+  deleteWarranty: (id) => {
+    const data = readDB();
+    if (!data.warranties) data.warranties = [];
+    data.warranties = data.warranties.filter(w => w.id !== id);
+    writeDB(data);
+    return true;
+  },
+
+  // --- LIBROS DE MANTENIMIENTO ---
+  getMaintenanceBooks: () => {
+    const data = readDB();
+    if (!data.maintenanceBooks) {
+      data.maintenanceBooks = {
+        "Benelli BN 125": [],
+        "Ford Focus": [],
+        "Ford Fiesta": []
+      };
+      writeDB(data);
+    }
+    // Asegurar que existan todos los vehículos requeridos en la estructura
+    let updated = false;
+    ["Benelli BN 125", "Ford Focus", "Ford Fiesta"].forEach(v => {
+      if (!data.maintenanceBooks[v]) {
+        data.maintenanceBooks[v] = [];
+        updated = true;
+      }
+    });
+    if (updated) {
+      writeDB(data);
+    }
+    return data.maintenanceBooks;
+  },
+  addMaintenanceEntry: (vehicleName, date, km, type, description, imageBase64, addedBy) => {
+    const data = readDB();
+    if (!data.maintenanceBooks) data.maintenanceBooks = {};
+    if (!data.maintenanceBooks[vehicleName]) {
+      data.maintenanceBooks[vehicleName] = [];
+    }
+    const newEntry = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      date,
+      km: parseInt(km) || 0,
+      type, // 'revision' | 'reparacion' | 'otro'
+      description: description || '',
+      imageBase64: imageBase64 || null,
+      addedBy,
+      createdAt: new Date().toISOString()
+    };
+    data.maintenanceBooks[vehicleName].push(newEntry);
+    // Ordenar de más reciente a más antiguo por fecha y km
+    data.maintenanceBooks[vehicleName].sort((a, b) => new Date(b.date) - new Date(a.date) || b.km - a.km);
+    writeDB(data);
+    return newEntry;
+  },
+  deleteMaintenanceEntry: (vehicleName, entryId) => {
+    const data = readDB();
+    if (!data.maintenanceBooks || !data.maintenanceBooks[vehicleName]) return false;
+    data.maintenanceBooks[vehicleName] = data.maintenanceBooks[vehicleName].filter(e => e.id !== entryId);
+    writeDB(data);
+    return true;
   }
 };

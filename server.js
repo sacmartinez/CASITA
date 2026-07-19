@@ -930,6 +930,276 @@ app.delete('/api/maintenance-books/:vehicle/entries/:id', (req, res) => {
   }
 });
 
+// --- 13. INTEGRACIÓN CON ALEXA (WEBHOOK DE LA SKILL) ---
+
+// Helper para construir la respuesta estándar de Alexa
+function makeAlexaResponse(speechText, shouldEndSession = true) {
+  return {
+    version: '1.0',
+    response: {
+      outputSpeech: {
+        type: 'PlainText',
+        text: speechText
+      },
+      shouldEndSession
+    }
+  };
+}
+
+// Parser de comandos naturales en castellano
+function parseNaturalCommand(text) {
+  if (!text) return null;
+
+  // Texto limpio para matching (sin tildes, en minúsculas)
+  const cleanMatch = text.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+  // Determinar si es Tarea o Compra
+  let category = 'shopping'; // por defecto
+  
+  const taskKeywords = [
+    'tarea', 'tareas', 'deber', 'tengo que', 'hacer', 'limpiar', 'fregar', 'barrer', 
+    'reparar', 'arreglar', 'ordenar', 'organizar', 'recuerdame', 'recuerdame que',
+    'planchar', 'cocinar', 'lavar', 'tirar'
+  ];
+  
+  const shoppingKeywords = [
+    'comprar', 'compra', 'supermercado', 'lista de compra', 'lista de compras', 'compras'
+  ];
+
+  const hasTaskKeyword = taskKeywords.some(kw => cleanMatch.includes(kw));
+  const hasShoppingKeyword = shoppingKeywords.some(kw => cleanMatch.includes(kw));
+
+  if (hasTaskKeyword && !hasShoppingKeyword) {
+    category = 'task';
+  } else {
+    category = 'shopping';
+  }
+
+  let parsedText = text.trim();
+  let supermarket = '';
+
+  // Si es compra, buscar y extraer el supermercado
+  if (category === 'shopping') {
+    const knownSupermarkets = [
+      'mercadona', 'lidl', 'primaprix', 'ahorramas', 'carrefour', 'dia', 'alcampo', 'aldi', 'eroski'
+    ];
+    
+    for (const superm of knownSupermarkets) {
+      // Coincidencia con palabras completas del supermercado y opcionalmente prefijos como "en", "de", "del"
+      const regex = new RegExp(`\\b(en|de|del)?\\s*${superm}\\b`, 'i');
+      if (regex.test(parsedText)) {
+        supermarket = superm.toUpperCase();
+        parsedText = parsedText.replace(regex, '').trim();
+        break;
+      }
+    }
+  }
+
+  // Eliminar palabras de control al final (ej: "a comprar", "en casa", "a tareas")
+  const trailingRegexes = [
+    /\s+en\s+casa\s*$/i,
+    /\s+a\s+comprar\s*$/i,
+    /\s+a\s+la\s+compra\s*$/i,
+    /\s+a\s+la\s+lista\s+de\s+compras?\s*$/i,
+    /\s+a\s+las?\s+tareas?\s*$/i,
+    /\s+a\s+la\s+lista\s+de\s+tareas?\s*$/i,
+    /\s+a\s+compra\s*$/i,
+    /\s+a\s+tareas?\s*$/i
+  ];
+
+  for (const regex of trailingRegexes) {
+    parsedText = parsedText.replace(regex, '').trim();
+  }
+
+  // Eliminar palabras de control al principio (ej: "añade", "recuerdame", "alexa dile a casita hub que")
+  const leadingRegexes = [
+    /^\s*alexa\s+dile\s+a\s+casita\s+hub\s+que\s+(añada|añade|agrega|pon|compre|compra)\s+/i,
+    /^\s*dile\s+a\s+casita\s+hub\s+que\s+(añada|añade|agrega|pon|compre|compra)\s+/i,
+    /^\s*alexa\s+dile\s+a\s+casita\s+hub\s+que\s+/i,
+    /^\s*dile\s+a\s+casita\s+hub\s+que\s+/i,
+    /^\s*alexa\s+/i,
+    /^\s*casita\s+hub\s+/i,
+    /^\s*añade\s+a\s+la\s+lista\s+de\s+compras?\s+de\s*/i,
+    /^\s*añade\s+a\s+la\s+lista\s+de\s+compras?\s+a\s*/i,
+    /^\s*añade\s+a\s+la\s+lista\s+de\s+compras?\s*/i,
+    /^\s*añade\s+a\s+la\s+lista\s+de\s+tareas?\s*/i,
+    /^\s*añadir\s+a\s+la\s+lista\s+de\s+compras?\s*/i,
+    /^\s*añadir\s+a\s+la\s+lista\s+de\s+tareas?\s*/i,
+    /^\s*(añade|añadir|agrega|agregar|pon|poner|compra|comprar)\s+que\s+/i,
+    /^\s*(añade|añadir|agrega|agregar|pon|poner|compra|comprar)\s+a\s+comprar\s+/i,
+    /^\s*(añade|añadir|agrega|agregar|pon|poner|compra|comprar)\s+a\s+tareas\s+/i,
+    /^\s*(añade|añadir|agrega|agregar|pon|poner|compra|comprar)\s+/i,
+    /^\s*(recuerdame|recuérdame)\s+que\s+/i,
+    /^\s*(recuerdame|recuérdame)\s+/i,
+    /^\s*(tengo que)\s+/i
+  ];
+
+  for (const regex of leadingRegexes) {
+    parsedText = parsedText.replace(regex, '').trim();
+  }
+
+  // Eliminar preposiciones y artículos sobrantes al inicio (ej. si queda "de tomates" -> "tomates")
+  parsedText = parsedText.replace(/^\s*(de|del|el|la|los|las|un|una|unos|unas)\s+/i, '').trim();
+
+  // Capitalizar primera letra
+  if (parsedText) {
+    parsedText = parsedText.charAt(0).toUpperCase() + parsedText.slice(1);
+  }
+
+  return {
+    category,
+    parsedText,
+    supermarket
+  };
+}
+
+app.post('/api/alexa', async (req, res) => {
+  try {
+    const { request, session } = req.body;
+    if (!request) {
+      return res.status(400).json({ error: 'Formato de petición inválido' });
+    }
+
+    // 1. Verificación de Seguridad (Skill Application ID)
+    const alexaSkillId = process.env.ALEXA_SKILL_ID || db.getAlexaConfig().skillId;
+    if (alexaSkillId && session?.application?.applicationId && session.application.applicationId !== alexaSkillId) {
+      console.warn(`[Alexa] Petición rechazada: Application ID inválido (${session.application.applicationId})`);
+      return res.status(403).json({ error: 'Unauthorized Alexa Skill Application ID' });
+    }
+
+    const requestType = request.type;
+
+    // Manejar LaunchRequest (Cuando se abre la Skill sin comando)
+    if (requestType === 'LaunchRequest') {
+      return res.json(makeAlexaResponse(
+        '¡Hola! Bienvenido a Casita Hub. Dime qué quieres añadir a la lista de compra o a tus tareas.',
+        false
+      ));
+    }
+
+    // Manejar SessionEndedRequest
+    if (requestType === 'SessionEndedRequest') {
+      return res.json({ version: '1.0', response: { shouldEndSession: true } });
+    }
+
+    // Manejar IntentRequest
+    if (requestType === 'IntentRequest') {
+      const intentName = request.intent.name;
+
+      // 1. Añadir artículo de compra
+      if (intentName === 'AddShoppingItemIntent') {
+        const itemSlot = request.intent.slots?.item?.value;
+        const supermarketSlot = request.intent.slots?.supermarket?.value;
+
+        if (!itemSlot) {
+          return res.json(makeAlexaResponse('No he podido identificar el producto. ¿Qué quieres comprar?', false));
+        }
+
+        const supermarket = supermarketSlot ? supermarketSlot.toUpperCase() : '';
+        const itemText = itemSlot.charAt(0).toUpperCase() + itemSlot.slice(1);
+        
+        db.addShopping(itemText, '', supermarket, 'Alexa');
+
+        // Notificación Push a ambos usuarios
+        const supermText = supermarket ? ` en ${supermarket}` : '';
+        const pushTitle = '🛒 Compra (Alexa)';
+        const pushBody = `Alexa ha añadido "${itemText}" a la lista de compra${supermText}`;
+        await Promise.all([
+          sendPushNotification('Ismael', pushTitle, pushBody),
+          sendPushNotification('Sandra', pushTitle, pushBody)
+        ]);
+
+        return res.json(makeAlexaResponse(`He añadido ${itemSlot} a la lista de compra${supermText}.`));
+      }
+
+      // 2. Añadir tarea
+      if (intentName === 'AddTaskIntent') {
+        const taskSlot = request.intent.slots?.task?.value;
+
+        if (!taskSlot) {
+          return res.json(makeAlexaResponse('No he podido identificar la tarea. ¿Qué tarea quieres añadir?', false));
+        }
+
+        const taskText = taskSlot.charAt(0).toUpperCase() + taskSlot.slice(1);
+        
+        db.addTask(taskText, 'domestica', 'Alexa');
+
+        // Notificación Push a ambos usuarios
+        const pushTitle = '📋 Tarea (Alexa)';
+        const pushBody = `Alexa ha añadido la tarea: "${taskText}"`;
+        await Promise.all([
+          sendPushNotification('Ismael', pushTitle, pushBody),
+          sendPushNotification('Sandra', pushTitle, pushBody)
+        ]);
+
+        return res.json(makeAlexaResponse(`He añadido la tarea "${taskSlot}" a Casita Hub.`));
+      }
+
+      // 3. Comando Natural / Procesamiento de Frase Completa
+      if (intentName === 'NaturalCommandIntent') {
+        const commandSlot = request.intent.slots?.command?.value || request.intent.slots?.phrase?.value;
+
+        if (!commandSlot) {
+          return res.json(makeAlexaResponse('No he recibido ningún comando. ¿Qué puedo hacer por ti?', false));
+        }
+
+        const parsed = parseNaturalCommand(commandSlot);
+        if (!parsed || !parsed.parsedText) {
+          return res.json(makeAlexaResponse('No he podido entender el comando. Por favor, inténtalo de nuevo con otra frase.', false));
+        }
+
+        if (parsed.category === 'shopping') {
+          const supermText = parsed.supermarket ? ` en ${parsed.supermarket}` : '';
+          db.addShopping(parsed.parsedText, '', parsed.supermarket, 'Alexa');
+
+          // Notificación Push
+          const pushTitle = '🛒 Compra (Alexa)';
+          const pushBody = `Alexa ha añadido "${parsed.parsedText}" a la lista de compra${supermText}`;
+          await Promise.all([
+            sendPushNotification('Ismael', pushTitle, pushBody),
+            sendPushNotification('Sandra', pushTitle, pushBody)
+          ]);
+
+          return res.json(makeAlexaResponse(`Añadido ${parsed.parsedText} a la lista de compra${supermText}.`));
+        } else {
+          db.addTask(parsed.parsedText, 'domestica', 'Alexa');
+
+          // Notificación Push
+          const pushTitle = '📋 Tarea (Alexa)';
+          const pushBody = `Alexa ha añadido la tarea: "${parsed.parsedText}"`;
+          await Promise.all([
+            sendPushNotification('Ismael', pushTitle, pushBody),
+            sendPushNotification('Sandra', pushTitle, pushBody)
+          ]);
+
+          return res.json(makeAlexaResponse(`Añadida la tarea "${parsed.parsedText}" a Casita Hub.`));
+        }
+      }
+
+      // 4. Intenciones Estándar de Alexa
+      if (intentName === 'AMAZON.HelpIntent') {
+        return res.json(makeAlexaResponse(
+          'Puedes pedirme cosas como: "añade leche a comprar", "añade fregar el suelo a tareas", o "añade patatas de Mercadona". ¿Qué deseas hacer?',
+          false
+        ));
+      }
+
+      if (intentName === 'AMAZON.CancelIntent' || intentName === 'AMAZON.StopIntent') {
+        return res.json(makeAlexaResponse('¡Hasta pronto!'));
+      }
+    }
+
+    // Respuesta genérica por defecto
+    return res.json(makeAlexaResponse('Lo siento, no he podido procesar esa petición.'));
+  } catch (error) {
+    console.error('[Alexa Error]', error);
+    res.status(500).json({ error: 'Error interno en el webhook de Alexa' });
+  }
+});
+
 // --- SERVIR FRONTEND EN PRODUCCIÓN ---
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {

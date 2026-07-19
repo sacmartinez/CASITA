@@ -768,5 +768,12 @@ export const db = {
     data.maintenanceBooks[vehicleName] = data.maintenanceBooks[vehicleName].filter(e => e.id !== entryId);
     writeDB(data);
     return true;
+  },
+
+  // --- CONFIGURACIÓN DE ALEXA ---
+  getAlexaConfig: () => {
+    const data = readDB();
+    return data.alexaConfig || { skillId: null };
   }
 };
+

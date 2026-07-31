@@ -44,11 +44,23 @@ export default function CareTracker({ currentUser }) {
 
   // Helper to find the latest action log
   const getLatestLog = (target, action) => {
-    // Para retrocompatibilidad si hubiese registros anteriores de 'Kalu' o 'Lua',
-    // buscamos por el nuevo target 'Jerbos (Kalu & Lua)' o los antiguos 'Kalu' / 'Lua'.
+    // Para retrocompatibilidad si hubiese registros anteriores de 'Kalu', 'Lua' o 'Jerbos',
+    // buscamos por el nuevo target 'Ratas (Kalu & Lua)', los antiguos 'Jerbos (Kalu & Lua)' o 'Kalu' / 'Lua'.
     return logs.find(log => {
-      if (target === 'Jerbos (Kalu & Lua)') {
-        return (log.target === 'Jerbos (Kalu & Lua)' || log.target === 'Kalu' || log.target === 'Lua') && log.action === action;
+      if (target === 'Ratas (Kalu & Lua)' || target === 'Jerbos (Kalu & Lua)') {
+        return (
+          log.target === 'Ratas (Kalu & Lua)' ||
+          log.target === 'Jerbos (Kalu & Lua)' ||
+          log.target === 'Kalu' ||
+          log.target === 'Lua'
+        ) && log.action === action;
+      }
+      if (target === 'Rata (Oreo)' || target === 'Jerbo (Oreo)') {
+        return (
+          log.target === 'Rata (Oreo)' ||
+          log.target === 'Jerbo (Oreo)' ||
+          log.target === 'Oreo'
+        ) && log.action === action;
       }
       return log.target === target && log.action === action;
     });
@@ -80,12 +92,12 @@ export default function CareTracker({ currentUser }) {
     return { label: 'OK', type: 'good' };
   };
 
-  // Jerbos logs
-  const gerbilsWater = getLatestLog('Jerbos (Kalu & Lua)', 'Agua');
-  const gerbilsFood = getLatestLog('Jerbos (Kalu & Lua)', 'Comida');
+  // Ratas logs
+  const gerbilsWater = getLatestLog('Ratas (Kalu & Lua)', 'Agua');
+  const gerbilsFood = getLatestLog('Ratas (Kalu & Lua)', 'Comida');
   // Oreo logs
-  const oreoWater = getLatestLog('Jerbo (Oreo)', 'Agua');
-  const oreoFood = getLatestLog('Jerbo (Oreo)', 'Comida');
+  const oreoWater = getLatestLog('Rata (Oreo)', 'Agua');
+  const oreoFood = getLatestLog('Rata (Oreo)', 'Comida');
   // Plant logs
   const plantsWater = getLatestLog('Plantas Terraza', 'Riego');
 
@@ -100,14 +112,14 @@ export default function CareTracker({ currentUser }) {
 
       <div className="care-grid">
         
-        {/* SECCIÓN JERBOS (UNIFICADA) */}
+        {/* SECCIÓN RATAS (UNIFICADA) */}
         <div className="care-section">
           <div className="care-section-title">
-            <span>🐹</span> Jerbos (Kalu & Lua)
+            <span>🐹</span> Ratas (Kalu & Lua)
           </div>
           <div className="care-buttons">
             <button 
-              onClick={() => handleLogCare('Jerbos (Kalu & Lua)', 'Agua')}
+              onClick={() => handleLogCare('Ratas (Kalu & Lua)', 'Agua')}
               className="btn-care agua"
               title="Registrar que has cambiado el agua a Kalu y Lua"
             >
@@ -115,7 +127,7 @@ export default function CareTracker({ currentUser }) {
               <span>Cambiar Agua</span>
             </button>
             <button 
-              onClick={() => handleLogCare('Jerbos (Kalu & Lua)', 'Comida')}
+              onClick={() => handleLogCare('Ratas (Kalu & Lua)', 'Comida')}
               className="btn-care comida"
               title="Registrar que has puesto comida a Kalu y Lua"
             >
@@ -146,14 +158,14 @@ export default function CareTracker({ currentUser }) {
           </div>
         </div>
 
-        {/* SECCIÓN JERBO OREO (VACACIONAL) */}
+        {/* SECCIÓN RATA OREO (VACACIONAL) */}
         <div className="care-section">
           <div className="care-section-title">
-            <span>🐹</span> Jerbo (Oreo) <small style={{ fontSize: '0.75rem', color: 'var(--primary)', opacity: 0.8 }}>(Vacacional)</small>
+            <span>🐹</span> Rata (Oreo) <small style={{ fontSize: '0.75rem', color: 'var(--primary)', opacity: 0.8 }}>(Vacacional)</small>
           </div>
           <div className="care-buttons">
             <button 
-              onClick={() => handleLogCare('Jerbo (Oreo)', 'Agua')}
+              onClick={() => handleLogCare('Rata (Oreo)', 'Agua')}
               className="btn-care agua"
               title="Registrar que has cambiado el agua a Oreo"
             >
@@ -161,7 +173,7 @@ export default function CareTracker({ currentUser }) {
               <span>Cambiar Agua</span>
             </button>
             <button 
-              onClick={() => handleLogCare('Jerbo (Oreo)', 'Comida')}
+              onClick={() => handleLogCare('Rata (Oreo)', 'Comida')}
               className="btn-care comida"
               title="Registrar que has puesto comida a Oreo"
             >
@@ -237,7 +249,7 @@ export default function CareTracker({ currentUser }) {
         ) : (
           <div className="history-list" style={{ maxHeight: '180px' }}>
             {logs.slice(0, 15).map((log) => {
-              const displayTarget = log.target === 'Kalu' || log.target === 'Lua' ? 'Jerbos (Kalu & Lua)' : log.target;
+              const displayTarget = (log.target === 'Kalu' || log.target === 'Lua' || log.target === 'Jerbos (Kalu & Lua)' || log.target === 'Ratas (Kalu & Lua)') ? 'Ratas (Kalu & Lua)' : (log.target === 'Jerbo (Oreo)' || log.target === 'Rata (Oreo)' ? 'Rata (Oreo)' : log.target);
               return (
                 <div key={log.id} className="history-item">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>

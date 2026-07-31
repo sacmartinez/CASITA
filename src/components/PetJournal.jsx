@@ -154,6 +154,43 @@ export default function PetJournal({ currentUser }) {
   };
 
 
+  const getLastCleaningDate = () => {
+    let latestDate = null;
+    petList.forEach(name => {
+      const pet = pets[name];
+      if (pet && pet.medicalLog) {
+        const cleanLogs = pet.medicalLog.filter(log => log.title.includes('Limpieza de jaula'));
+        cleanLogs.forEach(log => {
+          const d = new Date(log.date);
+          if (!latestDate || d > latestDate) {
+            latestDate = d;
+          }
+        });
+      }
+    });
+    return latestDate ? latestDate.toLocaleDateString('es-ES') : 'Nunca';
+  };
+
+  const handleCleanCage = async () => {
+    try {
+      const promises = petList.map(name =>
+        fetch(`/api/pets/${name}/medical`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: '🧹 Limpieza de jaula',
+            note: 'Jaula limpia e higienizada',
+            addedBy: currentUser
+          })
+        })
+      );
+      await Promise.all(promises);
+      fetchPets();
+    } catch (err) {
+      console.error('Error al registrar limpieza de jaula:', err);
+    }
+  };
+
   if (loading || !pets) {
     return <div className="glass-card"><div className="empty-state"><span>Cargando diario de mascotas...</span></div></div>;
   }
@@ -201,13 +238,13 @@ export default function PetJournal({ currentUser }) {
       </div>
 
       {/* Info Mascota Seleccionada */}
-      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid var(--glass-border)', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid var(--glass-border)', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '1rem', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             {petEmojis[activePet]} {activePet}
           </h3>
           <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            Categoría: <strong>Jerbo</strong>
+            Categoría: <strong>Rata</strong>
           </p>
         </div>
         {currentPetData.birthday && (
@@ -215,6 +252,50 @@ export default function PetJournal({ currentUser }) {
             🎂 {calculateAge(currentPetData.birthday)}
           </span>
         )}
+      </div>
+
+      {/* Sección Limpieza de Jaula */}
+      <div style={{
+        background: 'rgba(255,255,255,0.02)',
+        padding: '0.85rem 1rem',
+        borderRadius: '12px',
+        border: '1px solid var(--glass-border)',
+        marginBottom: '1.5rem',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '0.8rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <span style={{ fontSize: '1.5rem' }}>🧹</span>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '0.82rem', color: '#ffffff', fontWeight: 600 }}>Limpieza de Jaula</h4>
+            <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              Última limpieza: <strong style={{ color: '#34d399' }}>{getLastCleaningDate()}</strong>
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleCleanCage}
+          className="btn-primario"
+          style={{
+            padding: '0.4rem 0.8rem',
+            fontSize: '0.72rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.3rem',
+            background: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
+            border: 'none',
+            borderRadius: '6px',
+            color: '#ffffff',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          🧹 Limpiar Jaula
+        </button>
       </div>
 
       {/* Registro de Cuidado */}

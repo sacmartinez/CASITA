@@ -1433,3 +1433,40 @@ body {
     font-size: 0.85rem;
   }
 }
+
+/* Matrículas Minigame Styles */
+.plate-card-hover:hover {
+  transform: translateY(-2px) scale(1.02);
+  border-color: #3b82f6 !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3) !important;
+}
+
+@keyframes float-particle {
+  0% {
+    transform: translateY(0) scale(0.8) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-80vh) scale(1.2) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.particle {
+  pointer-events: none;
+}

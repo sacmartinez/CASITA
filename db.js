@@ -774,6 +774,50 @@ export const db = {
   getAlexaConfig: () => {
     const data = readDB();
     return data.alexaConfig || { skillId: null };
+  },
+
+  // --- MINIJUEGO MATRÍCULAS ---
+  getPlates: () => {
+    const data = readDB();
+    if (!data.plates) {
+      data.plates = [
+        "0000", "1111", "2222", "3333", "4444", "5555", "6666", "7777", "8888", "9999"
+      ].map(num => ({
+        id: num,
+        plate: `${num}XXX`,
+        completed: false,
+        completedBy: null,
+        completedAt: null
+      }));
+      writeDB(data);
+    }
+    return data.plates;
+  },
+  togglePlate: (id, completedBy) => {
+    const data = readDB();
+    if (!data.plates) return [];
+    const plate = data.plates.find(p => p.id === id);
+    if (plate) {
+      plate.completed = !plate.completed;
+      plate.completedBy = plate.completed ? completedBy : null;
+      plate.completedAt = plate.completed ? new Date().toISOString() : null;
+      writeDB(data);
+    }
+    return data.plates;
+  },
+  resetPlates: () => {
+    const data = readDB();
+    data.plates = [
+      "0000", "1111", "2222", "3333", "4444", "5555", "6666", "7777", "8888", "9999"
+    ].map(num => ({
+      id: num,
+      plate: `${num}XXX`,
+      completed: false,
+      completedBy: null,
+      completedAt: null
+    }));
+    writeDB(data);
+    return data.plates;
   }
 };
 

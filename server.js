@@ -931,6 +931,49 @@ app.delete('/api/maintenance-books/:vehicle/entries/:id', (req, res) => {
   }
 });
 
+// --- APARTADO MINIJUEGO MATRÍCULAS ---
+app.get('/api/plates', (req, res) => {
+  try {
+    res.json(db.getPlates());
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener matrículas del minijuego' });
+  }
+});
+
+app.post('/api/plates/toggle', async (req, res) => {
+  try {
+    const { id, user } = req.body;
+    if (!id || !user) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios' });
+    }
+    const oldPlates = db.getPlates();
+    const oldPlate = oldPlates.find(p => p.id === id);
+    const wasCompleted = oldPlate ? oldPlate.completed : false;
+
+    const plates = db.togglePlate(id, user);
+
+    if (!wasCompleted) {
+      await sendPushNotification(
+        getOtherUser(user),
+        '🚗 ¡Nueva matrícula vista!',
+        `${user} ha avistado y tachado la matrícula ${id}XXX`
+      );
+    }
+
+    res.json(plates);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al conmutar matrícula' });
+  }
+});
+
+app.post('/api/plates/reset', (req, res) => {
+  try {
+    res.json(db.resetPlates());
+  } catch (error) {
+    res.status(500).json({ error: 'Error al reiniciar matrículas' });
+  }
+});
+
 // --- 13. INTEGRACIÓN CON ALEXA (WEBHOOK DE LA SKILL) ---
 
 // Helper para construir la respuesta estándar de Alexa

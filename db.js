@@ -818,6 +818,21 @@ export const db = {
     }));
     writeDB(data);
     return data.plates;
+  },
+
+  // --- CONFIGURACIÓN DE OREO (ACTIVO/INACTIVO) ---
+  getOreoActive: () => {
+    const data = readDB();
+    if (data.oreoActive === undefined) {
+      return true;
+    }
+    return data.oreoActive;
+  },
+  setOreoActive: (active) => {
+    const data = readDB();
+    data.oreoActive = !!active;
+    writeDB(data);
+    return data.oreoActive;
   }
 };
 

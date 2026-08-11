@@ -4,6 +4,7 @@ export default function PetJournal({ currentUser }) {
   const [pets, setPets] = useState(null);
   const [activePet, setActivePet] = useState('Kalu');
   const [loading, setLoading] = useState(true);
+  const [oreoActive, setOreoActive] = useState(true);
 
   // Formulario único de cuidados
   const [observation, setObservation] = useState('');
@@ -14,7 +15,36 @@ export default function PetJournal({ currentUser }) {
 
   useEffect(() => {
     fetchPets();
+    fetchOreoActive();
   }, []);
+
+  const fetchOreoActive = async () => {
+    try {
+      const res = await fetch('/api/pets/oreo/active');
+      if (res.ok) {
+        const data = await res.json();
+        setOreoActive(data.active);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleToggleOreoActive = async (newActive) => {
+    try {
+      const res = await fetch('/api/pets/oreo/active', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: newActive })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOreoActive(data.active);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchPets = async () => {
     try {
@@ -156,7 +186,8 @@ export default function PetJournal({ currentUser }) {
 
   const getLastCleaningDate = () => {
     let latestDate = null;
-    petList.forEach(name => {
+    const targetPets = oreoActive ? petList : ['Kalu', 'Lua'];
+    targetPets.forEach(name => {
       const pet = pets[name];
       if (pet && pet.medicalLog) {
         const cleanLogs = pet.medicalLog.filter(log => log.title.includes('Limpieza de jaula'));
@@ -173,7 +204,8 @@ export default function PetJournal({ currentUser }) {
 
   const handleCleanCage = async () => {
     try {
-      const promises = petList.map(name =>
+      const targetPets = oreoActive ? petList : ['Kalu', 'Lua'];
+      const promises = targetPets.map(name =>
         fetch(`/api/pets/${name}/medical`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -237,6 +269,84 @@ export default function PetJournal({ currentUser }) {
         ))}
       </div>
 
+      {/* Control de Estado de Oreo (Vacacional) */}
+      {activePet === 'Oreo' && (
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.02)',
+          padding: '0.85rem 1rem',
+          borderRadius: '12px',
+          border: '1px solid var(--glass-border)',
+          marginBottom: '1rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ fontSize: '1.4rem' }}>{oreoActive ? '🏡' : '✈️'}</span>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '0.82rem', color: '#ffffff', fontWeight: 600 }}>Recordatorios de Oreo</h4>
+              <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {oreoActive ? 'Alertas de comida y agua activadas' : 'Alertas desactivadas temporalmente'}
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.72rem', color: oreoActive ? '#34d399' : 'var(--text-muted)', fontWeight: 'bold' }}>
+              {oreoActive ? 'ACTIVO' : 'PAUSADO'}
+            </span>
+            <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px' }}>
+              <input
+                type="checkbox"
+                checked={oreoActive}
+                onChange={(e) => handleToggleOreoActive(e.target.checked)}
+                style={{ opacity: 0, width: 0, height: 0 }}
+              />
+              <span style={{
+                position: 'absolute',
+                cursor: 'pointer',
+                inset: 0,
+                backgroundColor: oreoActive ? '#10b981' : '#4b5563',
+                transition: '0.3s',
+                borderRadius: '24px'
+              }}>
+                <span style={{
+                  position: 'absolute',
+                  content: '""',
+                  height: '16px',
+                  width: '16px',
+                  left: oreoActive ? '24px' : '4px',
+                  bottom: '4px',
+                  backgroundColor: 'white',
+                  transition: '0.3s',
+                  borderRadius: '50%'
+                }} />
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* Estado Vacacional Banner */}
+      {activePet === 'Oreo' && !oreoActive && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.2)',
+          color: '#f59e0b',
+          padding: '0.8rem 1rem',
+          borderRadius: '12px',
+          fontSize: '0.8rem',
+          lineHeight: '1.4',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}>
+          <span>⚠️</span>
+          <span><strong>Oreo está de vacaciones:</strong> Los recordatorios y alertas automáticas de agua y comida están desactivados hasta su regreso.</span>
+        </div>
+      )}
+
       {/* Info Mascota Seleccionada */}
       <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid var(--glass-border)', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
@@ -244,7 +354,7 @@ export default function PetJournal({ currentUser }) {
             {petEmojis[activePet]} {activePet}
           </h3>
           <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            Categoría: <strong>Rata</strong>
+            Categoría: <strong>Jerbo</strong>
           </p>
         </div>
         {currentPetData.birthday && (

@@ -21,18 +21,20 @@ function Dashboard({ currentUser, onNavigate }) {
   const [warranties, setWarranties] = useState([]);
   const [plates, setPlates] = useState([]);
   const [showPlatesModal, setShowPlatesModal] = useState(false);
+  const [oreoActive, setOreoActive] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [shopRes, taskRes, careRes, planRes, wRes, platesRes] = await Promise.all([
+        const [shopRes, taskRes, careRes, planRes, wRes, platesRes, oreoActiveRes] = await Promise.all([
           fetch(`${API_BASE}/shopping`),
           fetch(`${API_BASE}/tasks`),
           fetch(`${API_BASE}/care`),
           fetch(`${API_BASE}/planning`),
           fetch(`${API_BASE}/warranties`),
           fetch(`${API_BASE}/plates`),
+          fetch(`${API_BASE}/pets/oreo/active`),
         ]);
         setShopping(await shopRes.json());
         setTasks(await taskRes.json());
@@ -40,6 +42,8 @@ function Dashboard({ currentUser, onNavigate }) {
         setPlanning(await planRes.json());
         setWarranties(await wRes.json());
         setPlates(await platesRes.json());
+        const oreoActiveData = await oreoActiveRes.json();
+        setOreoActive(oreoActiveData.active);
       } catch (e) {
         console.error('Error cargando datos del dashboard', e);
       } finally {
@@ -123,16 +127,16 @@ function Dashboard({ currentUser, onNavigate }) {
     return diffHours >= maxHours;
   };
 
-  const gerbilsWater = getLatestLog('Ratas (Kalu & Lua)', 'Agua');
-  const gerbilsFood = getLatestLog('Ratas (Kalu & Lua)', 'Comida');
-  const oreoWater = getLatestLog('Rata (Oreo)', 'Agua');
-  const oreoFood = getLatestLog('Rata (Oreo)', 'Comida');
+  const gerbilsWater = getLatestLog('Jerbos (Kalu & Lua)', 'Agua');
+  const gerbilsFood = getLatestLog('Jerbos (Kalu & Lua)', 'Comida');
+  const oreoWater = getLatestLog('Jerbo (Oreo)', 'Agua');
+  const oreoFood = getLatestLog('Jerbo (Oreo)', 'Comida');
   const plantsWater = getLatestLog('Plantas Terraza', 'Riego');
 
   const gerbilsFoodWarning = getCareWarning(gerbilsFood, 24);
   const gerbilsWaterWarning = getCareWarning(gerbilsWater, 24);
-  const oreoFoodWarning = getCareWarning(oreoFood, 24);
-  const oreoWaterWarning = getCareWarning(oreoWater, 24);
+  const oreoFoodWarning = oreoActive ? getCareWarning(oreoFood, 24) : false;
+  const oreoWaterWarning = oreoActive ? getCareWarning(oreoWater, 24) : false;
   const plantsWaterWarning = getCareWarning(plantsWater, 72);
 
   if (loading) {
@@ -227,27 +231,27 @@ function Dashboard({ currentUser, onNavigate }) {
             <h3 className="dash-card-title">Cuidados</h3>
             <div className="dash-care-summary">
               <p className="dash-plan-item">
-                🐹 <strong>Comida Ratas:</strong>{' '}
+                🐹 <strong>Comida Jerbos:</strong>{' '}
                 <span style={{ color: gerbilsFoodWarning ? 'var(--warning)' : 'var(--success)', fontWeight: '500' }}>
                   {formatTimeElapsed(gerbilsFood?.timestamp)}
                 </span>
               </p>
               <p className="dash-plan-item">
-                💧 <strong>Agua Ratas:</strong>{' '}
+                💧 <strong>Agua Jerbos:</strong>{' '}
                 <span style={{ color: gerbilsWaterWarning ? 'var(--warning)' : 'var(--success)', fontWeight: '500' }}>
                   {formatTimeElapsed(gerbilsWater?.timestamp)}
                 </span>
               </p>
-              <p className="dash-plan-item">
+              <p className="dash-plan-item" style={!oreoActive ? { opacity: 0.6 } : {}}>
                 🐹 <strong>Comida Oreo:</strong>{' '}
-                <span style={{ color: oreoFoodWarning ? 'var(--warning)' : 'var(--success)', fontWeight: '500' }}>
-                  {formatTimeElapsed(oreoFood?.timestamp)}
+                <span style={{ color: oreoActive ? (oreoFoodWarning ? 'var(--warning)' : 'var(--success)') : 'var(--text-muted)', fontWeight: '500' }}>
+                  {oreoActive ? formatTimeElapsed(oreoFood?.timestamp) : 'Pausado'}
                 </span>
               </p>
-              <p className="dash-plan-item">
+              <p className="dash-plan-item" style={!oreoActive ? { opacity: 0.6 } : {}}>
                 💧 <strong>Agua Oreo:</strong>{' '}
-                <span style={{ color: oreoWaterWarning ? 'var(--warning)' : 'var(--success)', fontWeight: '500' }}>
-                  {formatTimeElapsed(oreoWater?.timestamp)}
+                <span style={{ color: oreoActive ? (oreoWaterWarning ? 'var(--warning)' : 'var(--success)') : 'var(--text-muted)', fontWeight: '500' }}>
+                  {oreoActive ? formatTimeElapsed(oreoWater?.timestamp) : 'Pausado'}
                 </span>
               </p>
               <p className="dash-plan-item">

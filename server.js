@@ -374,12 +374,14 @@ cron.schedule('0 6 * * *', async () => {
     }
 
     // 2. Verificar Agua de Oreo (Vacacional)
-    const lastOreoWater = getLatestLog('Jerbo (Oreo)', 'Agua');
-    const elapsedOreoWater = lastOreoWater ? (now - new Date(lastOreoWater.timestamp)) : limitMs + 1000;
-    if (elapsedOreoWater >= limitMs) {
-      console.log('[Cron] Enviando recordatorio de agua de Oreo...');
-      await sendPushNotification('Ismael', '⚠️ Oreo: Agua', 'Lleva más de 2 días sin cambio de agua. ¡Recordad ponérsela limpia! 💧');
-      await sendPushNotification('Sandra', '⚠️ Oreo: Agua', 'Lleva más de 2 días sin cambio de agua. ¡Recordad ponérsela limpia! 💧');
+    if (db.getOreoActive()) {
+      const lastOreoWater = getLatestLog('Jerbo (Oreo)', 'Agua');
+      const elapsedOreoWater = lastOreoWater ? (now - new Date(lastOreoWater.timestamp)) : limitMs + 1000;
+      if (elapsedOreoWater >= limitMs) {
+        console.log('[Cron] Enviando recordatorio de agua de Oreo...');
+        await sendPushNotification('Ismael', '⚠️ Oreo: Agua', 'Lleva más de 2 días sin cambio de agua. ¡Recordad ponérsela limpia! 💧');
+        await sendPushNotification('Sandra', '⚠️ Oreo: Agua', 'Lleva más de 2 días sin cambio de agua. ¡Recordad ponérsela limpia! 💧');
+      }
     }
 
     // 3. Verificar Riego de Plantas
@@ -424,12 +426,14 @@ app.post('/api/push/test-cron', async (req, res) => {
     }
 
     // 2. Verificar Agua de Oreo (Vacacional)
-    const lastOreoWater = getLatestLog('Jerbo (Oreo)', 'Agua');
-    const elapsedOreoWater = lastOreoWater ? (now - new Date(lastOreoWater.timestamp)) : limitMs + 1000;
-    if (elapsedOreoWater >= limitMs) {
-      alertsSent.push('Agua Oreo');
-      await sendPushNotification('Ismael', '⚠️ Oreo: Agua (Test)', 'Lleva más de 2 días sin cambio de agua. ¡Recordad ponérsela limpia! 💧');
-      await sendPushNotification('Sandra', '⚠️ Oreo: Agua (Test)', 'Lleva más de 2 días sin cambio de agua. ¡Recordad ponérsela limpia! 💧');
+    if (db.getOreoActive()) {
+      const lastOreoWater = getLatestLog('Jerbo (Oreo)', 'Agua');
+      const elapsedOreoWater = lastOreoWater ? (now - new Date(lastOreoWater.timestamp)) : limitMs + 1000;
+      if (elapsedOreoWater >= limitMs) {
+        alertsSent.push('Agua Oreo');
+        await sendPushNotification('Ismael', '⚠️ Oreo: Agua (Test)', 'Lleva más de 2 días sin cambio de agua. ¡Recordad ponérsela limpia! 💧');
+        await sendPushNotification('Sandra', '⚠️ Oreo: Agua (Test)', 'Lleva más de 2 días sin cambio de agua. ¡Recordad ponérsela limpia! 💧');
+      }
     }
 
     // 3. Verificar Riego de Plantas
@@ -818,6 +822,26 @@ app.post('/api/pets/:name/medical', async (req, res) => {
     res.json(updatedPet);
   } catch (error) {
     res.status(500).json({ error: 'Error al añadir historial médico de mascota' });
+  }
+});
+
+// --- ACTIVAR/DESACTIVAR OREO ---
+app.get('/api/pets/oreo/active', (req, res) => {
+  try {
+    const active = db.getOreoActive();
+    res.json({ active });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener estado de Oreo' });
+  }
+});
+
+app.post('/api/pets/oreo/active', async (req, res) => {
+  try {
+    const { active } = req.body;
+    const updatedActive = db.setOreoActive(active);
+    res.json({ active: updatedActive });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar estado de Oreo' });
   }
 });
 

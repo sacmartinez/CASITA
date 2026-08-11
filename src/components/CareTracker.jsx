@@ -3,10 +3,24 @@ import React, { useState, useEffect } from 'react';
 export default function CareTracker({ currentUser }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [oreoActive, setOreoActive] = useState(true);
 
   useEffect(() => {
     fetchLogs();
+    fetchOreoActive();
   }, []);
+
+  const fetchOreoActive = async () => {
+    try {
+      const res = await fetch('/api/pets/oreo/active');
+      if (res.ok) {
+        const data = await res.json();
+        setOreoActive(data.active);
+      }
+    } catch (err) {
+      console.error('Error al cargar estado de Oreo:', err);
+    }
+  };
 
   const fetchLogs = async () => {
     try {
@@ -92,12 +106,12 @@ export default function CareTracker({ currentUser }) {
     return { label: 'OK', type: 'good' };
   };
 
-  // Ratas logs
-  const gerbilsWater = getLatestLog('Ratas (Kalu & Lua)', 'Agua');
-  const gerbilsFood = getLatestLog('Ratas (Kalu & Lua)', 'Comida');
+  // Jerbos logs
+  const gerbilsWater = getLatestLog('Jerbos (Kalu & Lua)', 'Agua');
+  const gerbilsFood = getLatestLog('Jerbos (Kalu & Lua)', 'Comida');
   // Oreo logs
-  const oreoWater = getLatestLog('Rata (Oreo)', 'Agua');
-  const oreoFood = getLatestLog('Rata (Oreo)', 'Comida');
+  const oreoWater = getLatestLog('Jerbo (Oreo)', 'Agua');
+  const oreoFood = getLatestLog('Jerbo (Oreo)', 'Comida');
   // Plant logs
   const plantsWater = getLatestLog('Plantas Terraza', 'Riego');
 
@@ -112,14 +126,14 @@ export default function CareTracker({ currentUser }) {
 
       <div className="care-grid">
         
-        {/* SECCIÓN RATAS (UNIFICADA) */}
+        {/* SECCIÓN JERBOS (UNIFICADA) */}
         <div className="care-section">
           <div className="care-section-title">
-            <span>🐹</span> Ratas (Kalu & Lua)
+            <span>🐹</span> Jerbos (Kalu & Lua)
           </div>
           <div className="care-buttons">
             <button 
-              onClick={() => handleLogCare('Ratas (Kalu & Lua)', 'Agua')}
+              onClick={() => handleLogCare('Jerbos (Kalu & Lua)', 'Agua')}
               className="btn-care agua"
               title="Registrar que has cambiado el agua a Kalu y Lua"
             >
@@ -127,7 +141,7 @@ export default function CareTracker({ currentUser }) {
               <span>Cambiar Agua</span>
             </button>
             <button 
-              onClick={() => handleLogCare('Ratas (Kalu & Lua)', 'Comida')}
+              onClick={() => handleLogCare('Jerbos (Kalu & Lua)', 'Comida')}
               className="btn-care comida"
               title="Registrar que has puesto comida a Kalu y Lua"
             >
@@ -158,24 +172,28 @@ export default function CareTracker({ currentUser }) {
           </div>
         </div>
 
-        {/* SECCIÓN RATA OREO (VACACIONAL) */}
-        <div className="care-section">
+        {/* SECCIÓN JERBO OREO (VACACIONAL) */}
+        <div className="care-section" style={!oreoActive ? { opacity: 0.65 } : {}}>
           <div className="care-section-title">
-            <span>🐹</span> Rata (Oreo) <small style={{ fontSize: '0.75rem', color: 'var(--primary)', opacity: 0.8 }}>(Vacacional)</small>
+            <span>🐹</span> Jerbo (Oreo) <small style={{ fontSize: '0.75rem', color: 'var(--primary)', opacity: 0.8 }}>{!oreoActive ? '(Ausente)' : '(Vacacional)'}</small>
           </div>
           <div className="care-buttons">
             <button 
-              onClick={() => handleLogCare('Rata (Oreo)', 'Agua')}
+              onClick={() => handleLogCare('Jerbo (Oreo)', 'Agua')}
               className="btn-care agua"
-              title="Registrar que has cambiado el agua a Oreo"
+              title={oreoActive ? "Registrar que has cambiado el agua a Oreo" : "Oreo está ausente"}
+              disabled={!oreoActive}
+              style={!oreoActive ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             >
               <span className="btn-care-icon">💧</span>
               <span>Cambiar Agua</span>
             </button>
             <button 
-              onClick={() => handleLogCare('Rata (Oreo)', 'Comida')}
+              onClick={() => handleLogCare('Jerbo (Oreo)', 'Comida')}
               className="btn-care comida"
-              title="Registrar que has puesto comida a Oreo"
+              title={oreoActive ? "Registrar que has puesto comida a Oreo" : "Oreo está ausente"}
+              disabled={!oreoActive}
+              style={!oreoActive ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
             >
               <span className="btn-care-icon">🌾</span>
               <span>Echar Comida</span>
@@ -186,19 +204,19 @@ export default function CareTracker({ currentUser }) {
             <div className="status-row">
               <span>Agua:</span>
               <span className="status-value">
-                {oreoWater ? `${formatTime(oreoWater.timestamp).text} (${oreoWater.performedBy})` : 'Sin registro'}
+                {!oreoActive ? 'Pausado por vacaciones' : (oreoWater ? `${formatTime(oreoWater.timestamp).text} (${oreoWater.performedBy})` : 'Sin registro')}
               </span>
-              <span className={`status-alert ${getStatus(oreoWater, 24).type}`}>
-                {getStatus(oreoWater, 24).label}
+              <span className={`status-alert ${oreoActive ? getStatus(oreoWater, 24).type : 'good'}`} style={!oreoActive ? { backgroundColor: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' } : {}}>
+                {oreoActive ? getStatus(oreoWater, 24).label : 'Pausado'}
               </span>
             </div>
             <div className="status-row">
               <span>Comida:</span>
               <span className="status-value">
-                {oreoFood ? `${formatTime(oreoFood.timestamp).text} (${oreoFood.performedBy})` : 'Sin registro'}
+                {!oreoActive ? 'Pausado por vacaciones' : (oreoFood ? `${formatTime(oreoFood.timestamp).text} (${oreoFood.performedBy})` : 'Sin registro')}
               </span>
-              <span className={`status-alert ${getStatus(oreoFood, 24).type}`}>
-                {getStatus(oreoFood, 24).label}
+              <span className={`status-alert ${oreoActive ? getStatus(oreoFood, 24).type : 'good'}`} style={!oreoActive ? { backgroundColor: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' } : {}}>
+                {oreoActive ? getStatus(oreoFood, 24).label : 'Pausado'}
               </span>
             </div>
           </div>
@@ -249,7 +267,7 @@ export default function CareTracker({ currentUser }) {
         ) : (
           <div className="history-list" style={{ maxHeight: '180px' }}>
             {logs.slice(0, 15).map((log) => {
-              const displayTarget = (log.target === 'Kalu' || log.target === 'Lua' || log.target === 'Jerbos (Kalu & Lua)' || log.target === 'Ratas (Kalu & Lua)') ? 'Ratas (Kalu & Lua)' : (log.target === 'Jerbo (Oreo)' || log.target === 'Rata (Oreo)' ? 'Rata (Oreo)' : log.target);
+              const displayTarget = (log.target === 'Kalu' || log.target === 'Lua' || log.target === 'Jerbos (Kalu & Lua)' || log.target === 'Ratas (Kalu & Lua)') ? 'Jerbos (Kalu & Lua)' : (log.target === 'Jerbo (Oreo)' || log.target === 'Rata (Oreo)' ? 'Jerbo (Oreo)' : log.target);
               return (
                 <div key={log.id} className="history-item">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>

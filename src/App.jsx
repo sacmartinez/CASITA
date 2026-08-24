@@ -14,6 +14,7 @@ import PetJournal from './components/PetJournal';
 import MaintenanceLog from './components/MaintenanceLog';
 import StatsDashboard from './components/StatsDashboard';
 import WarrantiesManager from './components/WarrantiesManager';
+import BirthdayManager from './components/BirthdayManager';
 
 
 function App() {
@@ -108,7 +109,15 @@ function App() {
       {/* Contenido según pestaña */}
       {activeTab === 'home' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', padding: '0 1rem 1.5rem 1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
-          <Dashboard currentUser={currentUser} onNavigate={(tab) => setActiveTab(tab)} />
+          <Dashboard 
+            currentUser={currentUser} 
+            onNavigate={(tab, subTab) => {
+              setActiveTab(tab);
+              if (tab === 'planning' && subTab) {
+                setPlanningSubTab(subTab);
+              }
+            }} 
+          />
           
           <div style={{ width: '100%' }}>
             <FridgeNotes currentUser={currentUser} />
@@ -127,7 +136,7 @@ function App() {
       {showSection('planning') && (
         <div className="weekly-planner-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
           {/* Sub-tab Selector */}
-          <div style={{ display: 'flex', gap: '0.4rem', background: 'rgba(255,255,255,0.02)', padding: '0.3rem', borderRadius: '12px', border: '1px solid var(--glass-border)', maxWidth: '400px', width: '100%', margin: '0 auto' }}>
+          <div style={{ display: 'flex', gap: '0.4rem', background: 'rgba(255,255,255,0.02)', padding: '0.3rem', borderRadius: '12px', border: '1px solid var(--glass-border)', maxWidth: '500px', width: '100%', margin: '0 auto' }}>
             <button 
               onClick={() => setPlanningSubTab('weekly')} 
               className={`tab-btn ${planningSubTab === 'weekly' ? 'active' : ''}`}
@@ -142,12 +151,21 @@ function App() {
             >
               🍽️ Recetario
             </button>
+            <button 
+              onClick={() => setPlanningSubTab('birthdays')} 
+              className={`tab-btn ${planningSubTab === 'birthdays' ? 'active' : ''}`}
+              style={{ flex: 1, padding: '0.45rem', borderRadius: '8px', fontSize: '0.75rem', border: 'none', background: planningSubTab === 'birthdays' ? 'var(--primary)' : 'transparent', color: '#ffffff', cursor: 'pointer', transition: 'all 0.2s', fontWeight: 600 }}
+            >
+              🎂 Cumpleaños
+            </button>
           </div>
           
           {planningSubTab === 'weekly' ? (
             <WeeklyPlanner currentUser={currentUser} />
-          ) : (
+          ) : planningSubTab === 'recipes' ? (
             <RecipeBook currentUser={currentUser} />
+          ) : (
+            <BirthdayManager />
           )}
         </div>
       )}

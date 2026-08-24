@@ -393,6 +393,50 @@ cron.schedule('0 6 * * *', async () => {
       await sendPushNotification('Sandra', '🌱 Terraza: Riego', 'Las plantas de la terraza llevan más de 2 días sin regar. ¡Recordad echarles agua! 💧');
     }
 
+    // 4. Verificar Cumpleaños
+    try {
+      const birthdays = db.getBirthdays() || [];
+      const today = new Date();
+      
+      const formatMMDD = (d) => {
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${month}-${day}`;
+      };
+
+      const todayMMDD = formatMMDD(today);
+      
+      const in3Days = new Date();
+      in3Days.setDate(today.getDate() + 3);
+      const in3DaysMMDD = formatMMDD(in3Days);
+
+      for (const bday of birthdays) {
+        if (!bday.date) continue;
+        const parts = bday.date.split('-');
+        if (parts.length < 3) continue;
+        const bdayMMDD = `${parts[1]}-${parts[2]}`;
+
+        if (bdayMMDD === todayMMDD) {
+          const birthYear = parseInt(parts[0]);
+          const age = today.getFullYear() - birthYear;
+          const pushTitle = `🎂 ¡Hoy es el cumple de ${bday.name}!`;
+          const pushBody = `¡Cumple ${age} años! 🥳${bday.notes ? ` Notas: ${bday.notes}` : ''}`;
+          await sendPushNotification('Ismael', pushTitle, pushBody);
+          await sendPushNotification('Sandra', pushTitle, pushBody);
+        }
+        else if (bdayMMDD === in3DaysMMDD) {
+          const birthYear = parseInt(parts[0]);
+          const age = in3Days.getFullYear() - birthYear;
+          const pushTitle = `🎁 Cumpleaños cerca: ${bday.name}`;
+          const pushBody = `En 3 días (el ${parts[2]}/${parts[1]}) es su cumpleaños (cumple ${age} años). ¡Prepara un detalle! ✨`;
+          await sendPushNotification('Ismael', pushTitle, pushBody);
+          await sendPushNotification('Sandra', pushTitle, pushBody);
+        }
+      }
+    } catch (bdayErr) {
+      console.error('Error al procesar alertas de cumpleaños en cron:', bdayErr);
+    }
+
   } catch (error) {
     console.error('[Cron] Error en la tarea de recordatorio de cuidados:', error);
   }
@@ -443,6 +487,46 @@ app.post('/api/push/test-cron', async (req, res) => {
       alertsSent.push('Riego Plantas');
       await sendPushNotification('Ismael', '🌱 Terraza: Riego (Test)', 'Las plantas de la terraza llevan más de 2 días sin regar. ¡Recordad echarles agua! 💧');
       await sendPushNotification('Sandra', '🌱 Terraza: Riego (Test)', 'Las plantas de la terraza llevan más de 2 días sin regar. ¡Recordad echarles agua! 💧');
+    }
+
+    // 4. Verificar Cumpleaños (Test)
+    try {
+      const birthdays = db.getBirthdays() || [];
+      const formatMMDD = (d) => {
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${month}-${day}`;
+      };
+
+      const todayMMDD = formatMMDD(now);
+      
+      const in3Days = new Date();
+      in3Days.setDate(now.getDate() + 3);
+      const in3DaysMMDD = formatMMDD(in3Days);
+
+      for (const bday of birthdays) {
+        if (!bday.date) continue;
+        const parts = bday.date.split('-');
+        if (parts.length < 3) continue;
+        const bdayMMDD = `${parts[1]}-${parts[2]}`;
+
+        if (bdayMMDD === todayMMDD) {
+          const birthYear = parseInt(parts[0]);
+          const age = now.getFullYear() - birthYear;
+          alertsSent.push(`Cumple ${bday.name} (Hoy)`);
+          await sendPushNotification('Ismael', `🎂 Cumple ${bday.name} (Test)`, `¡Hoy cumple ${age} años! 🥳${bday.notes ? ` Notas: ${bday.notes}` : ''}`);
+          await sendPushNotification('Sandra', `🎂 Cumple ${bday.name} (Test)`, `¡Hoy cumple ${age} años! 🥳${bday.notes ? ` Notas: ${bday.notes}` : ''}`);
+        }
+        else if (bdayMMDD === in3DaysMMDD) {
+          const birthYear = parseInt(parts[0]);
+          const age = in3Days.getFullYear() - birthYear;
+          alertsSent.push(`Cumple ${bday.name} (En 3 días)`);
+          await sendPushNotification('Ismael', `🎁 Cumple ${bday.name} en 3d (Test)`, `En 3 días cumple ${age} años. ¡Prepara un detalle! ✨`);
+          await sendPushNotification('Sandra', `🎁 Cumple ${bday.name} en 3d (Test)`, `En 3 días cumple ${age} años. ¡Prepara un detalle! ✨`);
+        }
+      }
+    } catch (bdayErr) {
+      console.error('Error al procesar alertas de cumpleaños en test-cron:', bdayErr);
     }
 
     res.json({
@@ -842,6 +926,38 @@ app.post('/api/pets/oreo/active', async (req, res) => {
     res.json({ active: updatedActive });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar estado de Oreo' });
+  }
+});
+
+// --- ENDPOINTS CUMPLEAÑOS ---
+app.get('/api/birthdays', (req, res) => {
+  try {
+    res.json(db.getBirthdays());
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener cumpleaños' });
+  }
+});
+
+app.post('/api/birthdays', async (req, res) => {
+  try {
+    const { name, date, notes } = req.body;
+    if (!name || !date) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios' });
+    }
+    const updated = db.addBirthday(name, date, notes);
+    res.status(201).json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al añadir cumpleaños' });
+  }
+});
+
+app.delete('/api/birthdays/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = db.deleteBirthday(id);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar cumpleaños' });
   }
 });
 

@@ -22,7 +22,8 @@ const defaultData = {
   tasks: [],
   taskHistory: [],
   careLogs: [],
-  planning: defaultPlanning
+  planning: defaultPlanning,
+  birthdays: []
 };
 
 // Leer base de datos
@@ -47,6 +48,10 @@ function readDB() {
     }
     if (!data.careLogs) {
       data.careLogs = [];
+      changed = true;
+    }
+    if (!data.birthdays) {
+      data.birthdays = [];
       changed = true;
     }
     if (changed) {
@@ -833,6 +838,32 @@ export const db = {
     data.oreoActive = !!active;
     writeDB(data);
     return data.oreoActive;
+  },
+
+  // --- CUMPLEAÑOS ---
+  getBirthdays: () => {
+    const data = readDB();
+    return data.birthdays || [];
+  },
+  addBirthday: (name, date, notes) => {
+    const data = readDB();
+    if (!data.birthdays) data.birthdays = [];
+    const newBday = {
+      id: Date.now().toString(),
+      name,
+      date, // YYYY-MM-DD
+      notes: notes || ''
+    };
+    data.birthdays.push(newBday);
+    writeDB(data);
+    return data.birthdays;
+  },
+  deleteBirthday: (id) => {
+    const data = readDB();
+    if (!data.birthdays) return [];
+    data.birthdays = data.birthdays.filter(b => b.id !== id);
+    writeDB(data);
+    return data.birthdays;
   }
 };
 

@@ -22,12 +22,13 @@ function Dashboard({ currentUser, onNavigate }) {
   const [plates, setPlates] = useState([]);
   const [showPlatesModal, setShowPlatesModal] = useState(false);
   const [oreoActive, setOreoActive] = useState(true);
+  const [birthdays, setBirthdays] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [shopRes, taskRes, careRes, planRes, wRes, platesRes, oreoActiveRes] = await Promise.all([
+        const [shopRes, taskRes, careRes, planRes, wRes, platesRes, oreoActiveRes, bdaysRes] = await Promise.all([
           fetch(`${API_BASE}/shopping`),
           fetch(`${API_BASE}/tasks`),
           fetch(`${API_BASE}/care`),
@@ -35,6 +36,7 @@ function Dashboard({ currentUser, onNavigate }) {
           fetch(`${API_BASE}/warranties`),
           fetch(`${API_BASE}/plates`),
           fetch(`${API_BASE}/pets/oreo/active`),
+          fetch(`${API_BASE}/birthdays`),
         ]);
         setShopping(await shopRes.json());
         setTasks(await taskRes.json());
@@ -44,6 +46,7 @@ function Dashboard({ currentUser, onNavigate }) {
         setPlates(await platesRes.json());
         const oreoActiveData = await oreoActiveRes.json();
         setOreoActive(oreoActiveData.active);
+        setBirthdays(await bdaysRes.json());
       } catch (e) {
         console.error('Error cargando datos del dashboard', e);
       } finally {
@@ -138,6 +141,34 @@ function Dashboard({ currentUser, onNavigate }) {
   const oreoFoodWarning = oreoActive ? getCareWarning(oreoFood, 24) : false;
   const oreoWaterWarning = oreoActive ? getCareWarning(oreoWater, 24) : false;
   const plantsWaterWarning = getCareWarning(plantsWater, 72);
+
+  const getUpcomingBirthdays = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return (birthdays || []).map(b => {
+      if (!b.date) return null;
+      const parts = b.date.split('-');
+      if (parts.length < 3) return null;
+      const birthYear = parseInt(parts[0]);
+      const birthMonth = parseInt(parts[1]) - 1;
+      const birthDay = parseInt(parts[2]);
+
+      const nextBday = new Date(today.getFullYear(), birthMonth, birthDay);
+      if (nextBday < today) {
+        nextBday.setFullYear(today.getFullYear() + 1);
+      }
+      
+      const diffMs = nextBday.getTime() - today.getTime();
+      const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      return { ...b, daysLeft, age: nextBday.getFullYear() - birthYear };
+    })
+    .filter(Boolean)
+    .filter(b => b.daysLeft <= 15)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+  };
+
+  const upcomingBirthdays = getUpcomingBirthdays();
 
   if (loading) {
     return (
@@ -295,6 +326,31 @@ function Dashboard({ currentUser, onNavigate }) {
             <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.3rem', display: 'block' }}>
               {plates.filter(p => p.completed).length === 10 ? '🎉 ¡Colección completada!' : 'Completa las secuencias repetidas'}
             </span>
+          </div>
+          <span className="dash-card-arrow">›</span>
+        </button>
+
+        {/* Card Cumpleaños */}
+        <button className="dash-card dash-card--birthdays" onClick={() => onNavigate('planning', 'birthdays')} style={{ background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.08) 0%, rgba(219, 39, 119, 0.08) 100%)' }}>
+          <div className="dash-card-icon">🎂</div>
+          <div className="dash-card-content">
+            <h3 className="dash-card-title">Cumpleaños</h3>
+            {upcomingBirthdays.length === 0 ? (
+              <p className="dash-card-ok" style={{ fontSize: '0.85rem' }}>✅ Sin cumpleaños cerca</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', marginTop: '0.2rem' }}>
+                {upcomingBirthdays.slice(0, 2).map(b => (
+                  <p key={b.id} className="dash-plan-item" style={{ fontSize: '0.75rem', margin: 0 }}>
+                    🎈 <strong>{b.name}:</strong> {b.daysLeft === 0 ? '¡Hoy! 🎂' : b.daysLeft === 1 ? 'Mañana ⏰' : `en ${b.daysLeft} d`} ({b.age}a)
+                  </p>
+                ))}
+                {upcomingBirthdays.length > 2 && (
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.1rem' }}>
+                    +{upcomingBirthdays.length - 2} más próximamente
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <span className="dash-card-arrow">›</span>
         </button>

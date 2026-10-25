@@ -1059,11 +1059,11 @@ export default function ShoppingList({ currentUser }) {
 
       {/* Modal de Escáner de Tickets con IA */}
       {showScanModal && (
-        <div className="modal-overlay" onClick={() => setShowScanModal(false)} style={{ zIndex: 120 }}>
+        <div className="modal-overlay" onClick={() => setShowScanModal(false)} style={{ zIndex: 120, background: 'rgba(5, 8, 20, 0.85)', backdropFilter: 'blur(8px)' }}>
           <div
             className="modal-content glass-card"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: '560px', width: '94%', maxHeight: '88vh', overflowY: 'auto', padding: '1.3rem' }}
+            style={{ maxWidth: '560px', width: '94%', maxHeight: '88vh', overflowY: 'auto', padding: '1.3rem', background: '#111827', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 20px 50px rgba(0,0,0,0.8)' }}
           >
             <div className="modal-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '1.15rem' }}>
@@ -1277,11 +1277,11 @@ export default function ShoppingList({ currentUser }) {
 
       {/* Modal de Catálogo de Precios Guardados */}
       {showCatalogModal && (
-        <div className="modal-overlay" onClick={() => setShowCatalogModal(false)} style={{ zIndex: 120 }}>
+        <div className="modal-overlay" onClick={() => setShowCatalogModal(false)} style={{ zIndex: 120, background: 'rgba(5, 8, 20, 0.85)', backdropFilter: 'blur(8px)' }}>
           <div
             className="modal-content glass-card"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: '620px', width: '95%', maxHeight: '88vh', overflowY: 'auto', padding: '1.3rem' }}
+            style={{ maxWidth: '620px', width: '95%', maxHeight: '88vh', overflowY: 'auto', padding: '1.3rem', background: '#111827', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 20px 50px rgba(0,0,0,0.8)' }}
           >
             <div className="modal-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '1.15rem' }}>

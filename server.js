@@ -1063,11 +1063,78 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
   ]
 }`;
 
-    const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-    let lastError = null;
+    // 1. Consultar dinámicamente qué modelos tiene habilitados esta API Key en Google
+    let candidateModels = [
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+      'gemini-flash-latest',
+      'gemini-1.5-flash-latest'
+    ];
+
+    try {
+      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const available = (listData.models || [])
+          .filter(m =>
+            Array.isArray(m.supportedGenerationMethods) &&
+            m.supportedGenerationMethods.includes('generateContent') &&
+            m.name.includes('gemini') &&
+            !m.name.includes('embedding') &&
+            !m.name.includes('tts') &&
+            !m.name.includes('imagen') &&
+            !m.name.includes('audio')
+          )
+          .map(m => m.name.replace(/^models\//, ''));
+
+        if (available.length > 0) {
+          // Priorizar modelos flash (más rápidos y con cuota gratuita amplia)
+          available.sort((a, b) => {
+            const score = (name) => {
+              if (name.includes('2.5-flash') && !name.includes('preview')) return 10;
+              if (name.includes('2.0-flash') && !name.includes('exp')) return 9;
+              if (name.includes('flash-latest')) return 8;
+              if (name.includes('flash')) return 7;
+              if (name.includes('pro')) return 5;
+              return 1;
+            };
+            return score(b) - score(a);
+          });
+          candidateModels = available;
+        }
+      } else {
+        const errData = await listRes.json().catch(() => ({}));
+        const errMsg = errData?.error?.message || '';
+        if (listRes.status === 400 && errMsg.toLowerCase().includes('api key')) {
+          return res.status(400).json({ error: 'INVALID_API_KEY', message: 'La clave de API de Gemini no es válida. Revísala por favor.' });
+        }
+      }
+    } catch (e) {
+      console.warn('[Scan Receipt] No se pudo listar modelos dinámicamente, usando lista por defecto:', e.message);
+    }
+
+    const errorsByModel = [];
     let parsedResult = null;
 
-    for (const model of modelsToTry) {
+    // Función auxiliar para extraer el primer objeto JSON válido de un texto
+    const extractJsonObject = (rawText) => {
+      if (!rawText) return null;
+      const cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      try {
+        return JSON.parse(cleaned);
+      } catch (_) {
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+        }
+        throw new Error('Respuesta sin formato JSON válido');
+      }
+    };
+
+    for (const model of candidateModels.slice(0, 5)) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
         const response = await fetch(url, {
@@ -1081,37 +1148,43 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
               ]
             }],
             generationConfig: {
-              temperature: 0.1,
-              responseMimeType: "application/json"
+              temperature: 0.1
             }
           })
         });
 
         const data = await response.json();
         if (!response.ok) {
-          lastError = data?.error?.message || `Error HTTP ${response.status}`;
-          // Si la API key es inválida, no seguir probando modelos
-          if (response.status === 400 && lastError.toLowerCase().includes('api key')) {
+          const msg = data?.error?.message || `HTTP ${response.status}`;
+          errorsByModel.push(`${model}: ${msg}`);
+          if (response.status === 400 && msg.toLowerCase().includes('api key')) {
             return res.status(400).json({ error: 'INVALID_API_KEY', message: 'La clave de API de Gemini no es válida. Revísala por favor.' });
           }
           continue;
         }
 
-        const textOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const textOutput = parts.map(p => p.text || '').join('\n').trim();
         if (textOutput) {
-          const cleanedJson = textOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
-          parsedResult = JSON.parse(cleanedJson);
-          break;
+          const obj = extractJsonObject(textOutput);
+          if (obj && Array.isArray(obj.items)) {
+            parsedResult = obj;
+            break;
+          } else {
+            errorsByModel.push(`${model}: JSON incompleto`);
+          }
+        } else {
+          errorsByModel.push(`${model}: respuesta vacía`);
         }
       } catch (err) {
-        lastError = err.message;
+        errorsByModel.push(`${model}: ${err.message}`);
       }
     }
 
     if (!parsedResult || !Array.isArray(parsedResult.items)) {
       return res.status(500).json({
         error: 'SCAN_FAILED',
-        message: `No se pudo interpretar el ticket con la IA (${lastError || 'respuesta vacía'}). Intenta con una foto más clara.`
+        message: `No se pudo interpretar el ticket con la IA (${errorsByModel[0] || 'sin respuesta'}). Intenta de nuevo o con una foto más clara.`
       });
     }
 

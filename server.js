@@ -961,6 +961,176 @@ app.delete('/api/birthdays/:id', async (req, res) => {
   }
 });
 
+// --- ENDPOINTS CATÁLOGO DE PRECIOS Y ESCÁNER DE TICKETS IA ---
+app.get('/api/gemini/status', (req, res) => {
+  try {
+    const key = db.getGeminiKey();
+    res.json({ configured: !!key });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al comprobar clave de Gemini' });
+  }
+});
+
+app.post('/api/gemini/key', (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    const configured = db.setGeminiKey(apiKey);
+    res.json({ configured });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al guardar clave de Gemini' });
+  }
+});
+
+app.get('/api/prices', (req, res) => {
+  try {
+    res.json(db.getPrices());
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener el catálogo de precios' });
+  }
+});
+
+app.post('/api/prices/batch', (req, res) => {
+  try {
+    const { items, supermarket } = req.body;
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'Se requiere un array de productos' });
+    }
+    const updated = db.savePricesBatch(items, supermarket);
+    res.json({ prices: updated, supermarkets: db.getSupermarkets() });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al guardar lote de precios' });
+  }
+});
+
+app.put('/api/prices/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, supermarket, price } = req.body;
+    const updated = db.updatePriceItem(id, name, supermarket, price);
+    res.json({ prices: updated, supermarkets: db.getSupermarkets() });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar el producto del catálogo' });
+  }
+});
+
+app.delete('/api/prices/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = db.deletePriceItem(id);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar el producto del catálogo' });
+  }
+});
+
+app.post('/api/shopping/scan-receipt', async (req, res) => {
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Falta la imagen del ticket' });
+    }
+
+    const apiKey = db.getGeminiKey();
+    if (!apiKey) {
+      return res.status(400).json({
+        error: 'NEEDS_API_KEY',
+        message: 'Configura tu clave gratuita de Gemini IA para poder leer tickets automáticamente.'
+      });
+    }
+
+    // Extraer mimeType y base64 puro
+    let mimeType = 'image/jpeg';
+    let base64Data = imageBase64;
+    const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1];
+      base64Data = match[2];
+    }
+
+    const promptText = `Eres un asistente experto en leer tickets de supermercado de España (Lidl, Mercadona, Ahorramas, Primaprix, Carrefour, Aldi, Dia, Alcampo, Eroski, etc.).
+Analiza la imagen del ticket de compra o etiqueta de producto y extrae:
+1. "supermarket": El nombre del supermercado en MAYÚSCULAS (ej: "LIDL", "MERCADONA", "AHORRAMAS", "PRIMAPRIX", "CARREFOUR", "ALDI", "DIA"). Si no aparece o es ilegible, pon "GENERAL".
+2. "items": Lista de todos los productos comprados con su precio. Para cada producto devuelve:
+   - "name": Nombre limpio, genérico, claro y fácil de buscar en una lista de la compra (Primera letra mayúscula, en singular, sin códigos ni pesos extraños. Ejemplo: si en el ticket pone "TOMATE PERA MALLA 1K", pon "Tomate" o "Tomate pera"; si pone "LECHE SEMI S/LACT 1L", pon "Leche semidesnatada sin lactosa" o "Leche").
+   - "rawName": El texto original abreviado tal como sale en el ticket.
+   - "price": El precio unitario (o precio del envase/pack) como número decimal con punto (ej: 2.10). Ignora líneas de "TOTAL", "IVA", "TARJETA", "CAMBIO" o bolsas si no son relevantes, pero incluye todos los artículos de compra.
+
+Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloques markdown ni explicaciones:
+{
+  "supermarket": "LIDL",
+  "items": [
+    { "name": "Tomate", "rawName": "TOMATE RAMA", "price": 2.10 }
+  ]
+}`;
+
+    const modelsToTry = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    let lastError = null;
+    let parsedResult = null;
+
+    for (const model of modelsToTry) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: promptText },
+                { inline_data: { mime_type: mimeType, data: base64Data } }
+              ]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          lastError = data?.error?.message || `Error HTTP ${response.status}`;
+          // Si la API key es inválida, no seguir probando modelos
+          if (response.status === 400 && lastError.toLowerCase().includes('api key')) {
+            return res.status(400).json({ error: 'INVALID_API_KEY', message: 'La clave de API de Gemini no es válida. Revísala por favor.' });
+          }
+          continue;
+        }
+
+        const textOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (textOutput) {
+          const cleanedJson = textOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
+          parsedResult = JSON.parse(cleanedJson);
+          break;
+        }
+      } catch (err) {
+        lastError = err.message;
+      }
+    }
+
+    if (!parsedResult || !Array.isArray(parsedResult.items)) {
+      return res.status(500).json({
+        error: 'SCAN_FAILED',
+        message: `No se pudo interpretar el ticket con la IA (${lastError || 'respuesta vacía'}). Intenta con una foto más clara.`
+      });
+    }
+
+    res.json({
+      supermarket: (parsedResult.supermarket || 'GENERAL').toUpperCase(),
+      items: parsedResult.items.map((it, idx) => ({
+        id: `temp-${Date.now()}-${idx}`,
+        name: it.name || it.rawName || 'Producto',
+        rawName: it.rawName || it.name || '',
+        price: parseFloat(String(it.price || 0).replace(',', '.')) || 0,
+        selected: true
+      }))
+    });
+  } catch (error) {
+    console.error('[Scan Receipt Error]', error);
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Error interno al procesar la imagen del ticket.' });
+  }
+});
+
 // 12. BITÁCORA DE MANTENIMIENTO
 app.get('/api/maintenance', (req, res) => {
   try {

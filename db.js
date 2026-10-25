@@ -23,7 +23,8 @@ const defaultData = {
   taskHistory: [],
   careLogs: [],
   planning: defaultPlanning,
-  birthdays: []
+  birthdays: [],
+  productPrices: []
 };
 
 // Leer base de datos
@@ -52,6 +53,10 @@ function readDB() {
     }
     if (!data.birthdays) {
       data.birthdays = [];
+      changed = true;
+    }
+    if (!data.productPrices) {
+      data.productPrices = [];
       changed = true;
     }
     if (changed) {
@@ -864,6 +869,98 @@ export const db = {
     data.birthdays = data.birthdays.filter(b => b.id !== id);
     writeDB(data);
     return data.birthdays;
+  },
+
+  // --- CATÁLOGO DE PRECIOS E IA (GEMINI) ---
+  getGeminiKey: () => {
+    const data = readDB();
+    return process.env.GEMINI_API_KEY || data.geminiApiKey || '';
+  },
+  setGeminiKey: (key) => {
+    const data = readDB();
+    data.geminiApiKey = key ? key.trim() : '';
+    writeDB(data);
+    return !!data.geminiApiKey;
+  },
+  getPrices: () => {
+    const data = readDB();
+    return data.productPrices || [];
+  },
+  savePricesBatch: (items, defaultSupermarket) => {
+    const data = readDB();
+    if (!data.productPrices) data.productPrices = [];
+    if (!data.supermarkets) data.supermarkets = ["LIDL", "MERCADONA", "PRIMAPRIX", "AHORRAMAS"];
+
+    const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+    items.forEach(item => {
+      if (!item.name || item.price === undefined || item.price === null) return;
+      const numPrice = parseFloat(String(item.price).replace(',', '.'));
+      if (isNaN(numPrice) || numPrice <= 0) return;
+
+      const superm = (item.supermarket || defaultSupermarket || 'GENERAL').trim().toUpperCase();
+      if (superm && superm !== 'GENERAL' && !data.supermarkets.includes(superm)) {
+        data.supermarkets.push(superm);
+      }
+
+      const normName = normalize(item.name);
+      const existing = data.productPrices.find(
+        p => normalize(p.name) === normName && (p.supermarket || 'GENERAL').toUpperCase() === superm
+      );
+
+      if (existing) {
+        existing.name = item.name.trim();
+        existing.price = Number(numPrice.toFixed(2));
+        if (item.rawName) existing.rawName = item.rawName;
+        existing.updatedAt = new Date().toISOString();
+      } else {
+        data.productPrices.push({
+          id: Date.now().toString() + '-' + Math.floor(Math.random() * 10000),
+          name: item.name.trim(),
+          rawName: item.rawName || item.name.trim(),
+          supermarket: superm,
+          price: Number(numPrice.toFixed(2)),
+          updatedAt: new Date().toISOString()
+        });
+      }
+    });
+
+    // Ordenar alfabéticamente por nombre de producto
+    data.productPrices.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    writeDB(data);
+    return data.productPrices;
+  },
+  updatePriceItem: (id, name, supermarket, price) => {
+    const data = readDB();
+    if (!data.productPrices) return [];
+    const item = data.productPrices.find(p => p.id === id);
+    if (item) {
+      if (name !== undefined && name.trim()) item.name = name.trim();
+      if (supermarket !== undefined) {
+        const superm = supermarket.trim().toUpperCase() || 'GENERAL';
+        item.supermarket = superm;
+        if (superm !== 'GENERAL' && data.supermarkets && !data.supermarkets.includes(superm)) {
+          data.supermarkets.push(superm);
+        }
+      }
+      if (price !== undefined) {
+        const numPrice = parseFloat(String(price).replace(',', '.'));
+        if (!isNaN(numPrice) && numPrice >= 0) {
+          item.price = Number(numPrice.toFixed(2));
+        }
+      }
+      item.updatedAt = new Date().toISOString();
+      data.productPrices.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+      writeDB(data);
+    }
+    return data.productPrices;
+  },
+  deletePriceItem: (id) => {
+    const data = readDB();
+    if (!data.productPrices) return [];
+    data.productPrices = data.productPrices.filter(p => p.id !== id);
+    writeDB(data);
+    return data.productPrices;
   }
 };
 

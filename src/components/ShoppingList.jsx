@@ -28,48 +28,53 @@ const getSupermarketBgColor = (supermarket) => {
 };
 
 // Función para comprimir imagen en el navegador antes de enviarla a la IA
-const compressImageToBase64 = (file, maxDim = 1280, quality = 0.72) => {
+// Usa URL.createObjectURL para no saturar la memoria RAM en cámaras móviles de alta resolución
+const compressImageToBase64 = (file, maxDim = 1100, quality = 0.7) => {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target.result;
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          if (width > maxDim || height > maxDim) {
-            if (width >= height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width >= height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
           }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', quality));
-        } catch (canvasErr) {
-          // Fallback: enviar imagen original si falla el canvas
-          resolve(dataUrl);
         }
-      };
-      img.onerror = () => {
-        // Fallback: si el navegador no pre-renderiza el formato en <img>, enviar el base64 directo
-        if (typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
-          resolve(dataUrl);
-        } else {
-          reject(new Error('Formato de imagen no soportado por el navegador.'));
-        }
-      };
-      img.src = dataUrl;
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        URL.revokeObjectURL(objectUrl);
+        resolve(compressedDataUrl);
+      } catch (canvasErr) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('No se pudo comprimir la imagen en el navegador (' + canvasErr.message + ').'));
+      }
     };
-    reader.onerror = () => reject(new Error('No se pudo leer el archivo de imagen del dispositivo.'));
-    reader.readAsDataURL(file);
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      // Fallback: si el navegador no pudo decodificar vía ObjectURL, intentar con FileReader si el archivo es < 6MB
+      if (file.size <= 6 * 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo de imagen del móvil.'));
+        reader.readAsDataURL(file);
+      } else {
+        reject(new Error('El formato de la foto no es compatible o es demasiado pesada. Haz una captura o usa formato JPG.'));
+      }
+    };
+
+    img.src = objectUrl;
   });
 };
 
@@ -318,7 +323,7 @@ export default function ShoppingList({ currentUser }) {
         if (data.error === 'NEEDS_API_KEY' || data.error === 'INVALID_API_KEY') {
           setShowKeyConfig(true);
         }
-        setScanError(data.message || 'Error al analizar el ticket.');
+        setScanError(data.message || `Error HTTP ${res.status} al analizar el ticket.`);
       } else {
         const detectedSuper = (data.supermarket || 'LIDL').toUpperCase();
         if (supermarkets.includes(detectedSuper)) {
@@ -332,7 +337,7 @@ export default function ShoppingList({ currentUser }) {
       }
     } catch (err) {
       console.error('Error escaneando ticket:', err);
-      setScanError(err.message || 'Error de conexión al analizar la imagen.');
+      setScanError(`Fallo de red/imagen (${err.name || 'Error'}: ${err.message || 'desconocido'}).`);
     } finally {
       setScanLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

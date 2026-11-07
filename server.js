@@ -1108,16 +1108,20 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
           .map(m => m.name.replace(/^models\//, ''));
 
         if (available.length > 0) {
-          // Priorizar modelos flash estables (rápidos, sin bloqueo de thinking largo y con cuota gratuita amplia)
+          // Priorizar gemini-2.5-flash y flash-lite (los modelos actuales con cuota gratuita activa)
+          // Dejar gemini-2.0-flash al final porque Google ha retirado su cuota gratuita (limit: 0)
           available.sort((a, b) => {
             const score = (name) => {
-              if (name === 'gemini-2.0-flash') return 12;
-              if (name === 'gemini-2.5-flash') return 11;
-              if (name === 'gemini-2.5-flash-lite' || name === 'gemini-2.0-flash-lite') return 10;
-              if (name.includes('2.0-flash') && !name.includes('preview')) return 9;
-              if (name.includes('2.5-flash') && !name.includes('preview')) return 8;
-              if (name.includes('flash-latest')) return 7;
-              if (name.includes('flash')) return 6;
+              if (name === 'gemini-2.5-flash') return 20;
+              if (name === 'gemini-2.5-flash-lite') return 19;
+              if (name === 'gemini-flash-latest') return 18;
+              if (name === 'gemini-flash-lite-latest') return 17;
+              if (name.includes('2.5-flash') && !name.includes('preview') && !name.includes('tts') && !name.includes('image')) return 16;
+              if (name.includes('3-flash') && !name.includes('tts') && !name.includes('image')) return 15;
+              if (name.includes('2.5-flash')) return 14;
+              if (name === 'gemini-2.0-flash-lite') return 5;
+              if (name === 'gemini-2.0-flash') return 4;
+              if (name.includes('flash')) return 3;
               return 1;
             };
             return score(b) - score(a);
@@ -1154,9 +1158,17 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
       }
     };
 
-    for (const model of candidateModels.slice(0, 3)) {
+    for (const model of candidateModels.slice(0, 4)) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const genConfig = {
+          temperature: 0.1
+        };
+        // Desactivar thinking en modelos 2.5 para que respondan en 2-3 segundos y no agoten el timeout de Render
+        if (model.includes('2.5-flash')) {
+          genConfig.thinkingConfig = { thinkingBudget: 0 };
+        }
+
         const response = await fetchWithTimeout(
           url,
           {
@@ -1169,12 +1181,10 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
                   { inline_data: { mime_type: mimeType, data: base64Data } }
                 ]
               }],
-              generationConfig: {
-                temperature: 0.1
-              }
+              generationConfig: genConfig
             })
           },
-          18000
+          22000
         );
 
         const data = await response.json();

@@ -1063,18 +1063,31 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
   ]
 }`;
 
+    // Función auxiliar para llamadas fetch con timeout de seguridad (evita bloqueos 502/504 en Render)
+    const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
     // 1. Consultar dinámicamente qué modelos tiene habilitados esta API Key en Google
     let candidateModels = [
       'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
       'gemini-2.0-flash',
       'gemini-2.0-flash-lite',
-      'gemini-flash-latest',
-      'gemini-1.5-flash-latest'
+      'gemini-flash-latest'
     ];
 
     try {
-      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+      const listRes = await fetchWithTimeout(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+        {},
+        6000
+      );
       if (listRes.ok) {
         const listData = await listRes.json();
         const available = (listData.models || [])
@@ -1085,19 +1098,26 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
             !m.name.includes('embedding') &&
             !m.name.includes('tts') &&
             !m.name.includes('imagen') &&
-            !m.name.includes('audio')
+            !m.name.includes('audio') &&
+            !m.name.includes('thinking') &&
+            !m.name.includes('robotics') &&
+            !m.name.includes('computer-use') &&
+            !m.name.includes('2.5-pro') &&
+            !m.name.includes('exp')
           )
           .map(m => m.name.replace(/^models\//, ''));
 
         if (available.length > 0) {
-          // Priorizar modelos flash (más rápidos y con cuota gratuita amplia)
+          // Priorizar modelos flash estables (rápidos, sin bloqueo de thinking largo y con cuota gratuita amplia)
           available.sort((a, b) => {
             const score = (name) => {
-              if (name.includes('2.5-flash') && !name.includes('preview')) return 10;
-              if (name.includes('2.0-flash') && !name.includes('exp')) return 9;
-              if (name.includes('flash-latest')) return 8;
-              if (name.includes('flash')) return 7;
-              if (name.includes('pro')) return 5;
+              if (name === 'gemini-2.0-flash') return 12;
+              if (name === 'gemini-2.5-flash') return 11;
+              if (name === 'gemini-2.5-flash-lite' || name === 'gemini-2.0-flash-lite') return 10;
+              if (name.includes('2.0-flash') && !name.includes('preview')) return 9;
+              if (name.includes('2.5-flash') && !name.includes('preview')) return 8;
+              if (name.includes('flash-latest')) return 7;
+              if (name.includes('flash')) return 6;
               return 1;
             };
             return score(b) - score(a);
@@ -1112,7 +1132,7 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
         }
       }
     } catch (e) {
-      console.warn('[Scan Receipt] No se pudo listar modelos dinámicamente, usando lista por defecto:', e.message);
+      console.warn('[Scan Receipt] No se pudo listar modelos dinámicamente, usando lista rápida por defecto:', e.message);
     }
 
     const errorsByModel = [];
@@ -1134,24 +1154,28 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
       }
     };
 
-    for (const model of candidateModels.slice(0, 5)) {
+    for (const model of candidateModels.slice(0, 3)) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: promptText },
-                { inline_data: { mime_type: mimeType, data: base64Data } }
-              ]
-            }],
-            generationConfig: {
-              temperature: 0.1
-            }
-          })
-        });
+        const response = await fetchWithTimeout(
+          url,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: promptText },
+                  { inline_data: { mime_type: mimeType, data: base64Data } }
+                ]
+              }],
+              generationConfig: {
+                temperature: 0.1
+              }
+            })
+          },
+          18000
+        );
 
         const data = await response.json();
         if (!response.ok) {
@@ -1177,7 +1201,8 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
           errorsByModel.push(`${model}: respuesta vacía`);
         }
       } catch (err) {
-        errorsByModel.push(`${model}: ${err.message}`);
+        const reason = err.name === 'AbortError' ? 'tiempo de espera agotado' : err.message;
+        errorsByModel.push(`${model}: ${reason}`);
       }
     }
 

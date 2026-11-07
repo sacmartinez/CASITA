@@ -28,29 +28,47 @@ const getSupermarketBgColor = (supermarket) => {
 };
 
 // Función para comprimir imagen en el navegador antes de enviarla a la IA
-const compressImageToBase64 = (file, maxWidth = 1400, quality = 0.8) => {
+const compressImageToBase64 = (file, maxDim = 1280, quality = 0.72) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
+      const dataUrl = e.target.result;
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
+        try {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width >= height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (canvasErr) {
+          // Fallback: enviar imagen original si falla el canvas
+          resolve(dataUrl);
         }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
       };
-      img.onerror = reject;
-      img.src = e.target.result;
+      img.onerror = () => {
+        // Fallback: si el navegador no pre-renderiza el formato en <img>, enviar el base64 directo
+        if (typeof dataUrl === 'string' && dataUrl.startsWith('data:')) {
+          resolve(dataUrl);
+        } else {
+          reject(new Error('Formato de imagen no soportado por el navegador.'));
+        }
+      };
+      img.src = dataUrl;
     };
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo de imagen del dispositivo.'));
     reader.readAsDataURL(file);
   });
 };
@@ -288,7 +306,14 @@ export default function ShoppingList({ currentUser }) {
         body: JSON.stringify({ imageBase64: compressedBase64 })
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch (_) {
+        throw new Error(`El servidor tardó demasiado o devolvió una respuesta inválida (HTTP ${res.status}). Inténtalo de nuevo.`);
+      }
+
       if (!res.ok) {
         if (data.error === 'NEEDS_API_KEY' || data.error === 'INVALID_API_KEY') {
           setShowKeyConfig(true);
@@ -307,7 +332,7 @@ export default function ShoppingList({ currentUser }) {
       }
     } catch (err) {
       console.error('Error escaneando ticket:', err);
-      setScanError('Error de conexión al analizar la imagen.');
+      setScanError(err.message || 'Error de conexión al analizar la imagen.');
     } finally {
       setScanLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

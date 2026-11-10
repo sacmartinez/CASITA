@@ -303,8 +303,123 @@ export default function ShoppingList({ currentUser }) {
     setScanError('');
     setScannedItems([]);
 
+    const applyDetectedResult = (resultObj) => {
+      const detectedSuper = (resultObj.supermarket || 'LIDL').toUpperCase();
+      if (supermarkets.includes(detectedSuper)) {
+        setScannedSupermarket(detectedSuper);
+        setScannedCustomSupermarket('');
+      } else {
+        setScannedSupermarket('OTRO');
+        setScannedCustomSupermarket(detectedSuper);
+      }
+      setScannedItems(
+        (resultObj.items || []).map((it, idx) => ({
+          id: it.id || `temp-${Date.now()}-${idx}`,
+          name: it.name || it.rawName || 'Producto',
+          rawName: it.rawName || it.name || '',
+          price: parseFloat(String(it.price || 0).replace(',', '.')) || 0,
+          selected: true
+        }))
+      );
+    };
+
+    // Escaneo directo desde el navegador hacia Google Gemini (evita bloqueos/cortes de Render)
+    const scanDirectlyFromBrowser = async (imageBase64) => {
+      const keyRes = await fetch('/api/gemini/key-value');
+      if (!keyRes.ok) throw new Error('No se pudo obtener la clave de Gemini del servidor.');
+      const { apiKey } = await keyRes.json();
+      if (!apiKey) {
+        setShowKeyConfig(true);
+        throw new Error('Configura primero tu clave gratuita de Gemini IA.');
+      }
+
+      let mimeType = 'image/jpeg';
+      let base64Data = imageBase64;
+      const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1];
+        base64Data = match[2];
+      }
+
+      const promptText = `Eres un asistente experto en leer tickets de supermercado de España (Lidl, Mercadona, Ahorramas, Primaprix, Carrefour, Aldi, Dia, Alcampo, Eroski, etc.).
+Analiza la imagen del ticket de compra o etiqueta de producto y extrae:
+1. "supermarket": El nombre del supermercado en MAYÚSCULAS (ej: "LIDL", "MERCADONA", "AHORRAMAS", "PRIMAPRIX", "CARREFOUR", "ALDI", "DIA"). Si no aparece o es ilegible, pon "GENERAL".
+2. "items": Lista de todos los productos comprados con su precio. Para cada producto devuelve:
+   - "name": Nombre limpio, genérico, claro y fácil de buscar en una lista de la compra (Primera letra mayúscula, en singular, sin códigos ni pesos extraños. Ejemplo: si en el ticket pone "TOMATE PERA MALLA 1K", pon "Tomate" o "Tomate pera"; si pone "LECHE SEMI S/LACT 1L", pon "Leche semidesnatada sin lactosa" o "Leche").
+   - "rawName": El texto original abreviado tal como sale en el ticket.
+   - "price": El precio unitario (o precio del envase/pack) como número decimal con punto (ej: 2.10). Ignora líneas de "TOTAL", "IVA", "TARJETA", "CAMBIO" o bolsas si no son relevantes, pero incluye todos los artículos de compra.
+
+Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloques markdown ni explicaciones:
+{
+  "supermarket": "LIDL",
+  "items": [
+    { "name": "Tomate", "rawName": "TOMATE RAMA", "price": 2.10 }
+  ]
+}`;
+
+      const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
+      let lastErr = 'sin respuesta';
+
+      for (const model of models) {
+        try {
+          const genConfig = { temperature: 0.1 };
+          if (model.includes('2.5-flash')) {
+            genConfig.thinkingConfig = { thinkingBudget: 0 };
+          }
+          const resp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { text: promptText },
+                    { inline_data: { mime_type: mimeType, data: base64Data } }
+                  ]
+                }],
+                generationConfig: genConfig
+              })
+            }
+          );
+
+          const json = await resp.json();
+          if (!resp.ok) {
+            lastErr = json?.error?.message || `HTTP ${resp.status}`;
+            continue;
+          }
+
+          const parts = json?.candidates?.[0]?.content?.parts || [];
+          const textOut = parts.map(p => p.text || '').join('\n').trim();
+          const cleaned = textOut.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const firstBrace = cleaned.indexOf('{');
+          const lastBrace = cleaned.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            const parsed = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+            if (parsed && Array.isArray(parsed.items)) {
+              return parsed;
+            }
+          }
+        } catch (err) {
+          lastErr = err.message;
+        }
+      }
+      throw new Error(`No se pudo leer el ticket (${lastErr}).`);
+    };
+
     try {
       const compressedBase64 = await compressImageToBase64(file);
+
+      // 1. Intentar primero directo desde el navegador hacia Gemini (más rápido, no pasa imagen grande por Render)
+      try {
+        const directData = await scanDirectlyFromBrowser(compressedBase64);
+        applyDetectedResult(directData);
+        return;
+      } catch (directErr) {
+        console.warn('Fallback a escaneo vía servidor:', directErr.message);
+      }
+
+      // 2. Fallback: escaneo a través del servidor backend
       const res = await fetch('/api/shopping/scan-receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -325,19 +440,11 @@ export default function ShoppingList({ currentUser }) {
         }
         setScanError(data.message || `Error HTTP ${res.status} al analizar el ticket.`);
       } else {
-        const detectedSuper = (data.supermarket || 'LIDL').toUpperCase();
-        if (supermarkets.includes(detectedSuper)) {
-          setScannedSupermarket(detectedSuper);
-          setScannedCustomSupermarket('');
-        } else {
-          setScannedSupermarket('OTRO');
-          setScannedCustomSupermarket(detectedSuper);
-        }
-        setScannedItems(data.items || []);
+        applyDetectedResult(data);
       }
     } catch (err) {
       console.error('Error escaneando ticket:', err);
-      setScanError(`Fallo de red/imagen (${err.name || 'Error'}: ${err.message || 'desconocido'}).`);
+      setScanError(`Fallo al analizar (${err.message || 'desconocido'}).`);
     } finally {
       setScanLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

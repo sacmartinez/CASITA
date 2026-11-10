@@ -971,6 +971,15 @@ app.get('/api/gemini/status', (req, res) => {
   }
 });
 
+app.get('/api/gemini/key-value', (req, res) => {
+  try {
+    const key = db.getGeminiKey();
+    res.json({ configured: !!key, apiKey: key || '' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener clave de Gemini' });
+  }
+});
+
 app.post('/api/gemini/key', (req, res) => {
   try {
     const { apiKey } = req.body;
@@ -1665,8 +1674,17 @@ app.post('/api/alexa', async (req, res) => {
 // --- SERVIR FRONTEND EN PRODUCCIÓN ---
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+    }
+  }));
   app.use((req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.sendFile(path.join(distPath, 'index.html'));
   });
   console.log('Sirviendo archivos estáticos del frontend desde:', distPath);

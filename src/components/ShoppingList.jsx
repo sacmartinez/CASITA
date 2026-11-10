@@ -101,11 +101,19 @@ export default function ShoppingList({ currentUser }) {
   // Estados dentro del modal de escáner
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState('');
+  const [scanLogs, setScanLogs] = useState([]);
+  const [showLogsPanel, setShowLogsPanel] = useState(false);
+  const [logsCopied, setLogsCopied] = useState(false);
   const [scannedSupermarket, setScannedSupermarket] = useState('LIDL');
   const [scannedCustomSupermarket, setScannedCustomSupermarket] = useState('');
   const [scannedItems, setScannedItems] = useState([]);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showKeyConfig, setShowKeyConfig] = useState(false);
+
+  const appendScanLog = (msg) => {
+    const time = new Date().toLocaleTimeString('es-ES', { hour12: false });
+    setScanLogs(prev => [...prev, `[${time}] ${msg}`]);
+  };
 
   // Estados dentro del modal de catálogo
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -302,6 +310,12 @@ export default function ShoppingList({ currentUser }) {
     setScanLoading(true);
     setScanError('');
     setScannedItems([]);
+    setLogsCopied(false);
+    setScanLogs([]);
+
+    const sizeKB = Math.round((file.size || 0) / 1024);
+    appendScanLog(`🚀 Iniciando escaneo (App v6.4.5)`);
+    appendScanLog(`📄 Archivo: "${file.name}" (${file.type || 'tipo desconocido'}, ${sizeKB} KB)`);
 
     const applyDetectedResult = (resultObj) => {
       const detectedSuper = (resultObj.supermarket || 'LIDL').toUpperCase();
@@ -312,26 +326,32 @@ export default function ShoppingList({ currentUser }) {
         setScannedSupermarket('OTRO');
         setScannedCustomSupermarket(detectedSuper);
       }
-      setScannedItems(
-        (resultObj.items || []).map((it, idx) => ({
-          id: it.id || `temp-${Date.now()}-${idx}`,
-          name: it.name || it.rawName || 'Producto',
-          rawName: it.rawName || it.name || '',
-          price: parseFloat(String(it.price || 0).replace(',', '.')) || 0,
-          selected: true
-        }))
-      );
+      const list = (resultObj.items || []).map((it, idx) => ({
+        id: it.id || `temp-${Date.now()}-${idx}`,
+        name: it.name || it.rawName || 'Producto',
+        rawName: it.rawName || it.name || '',
+        price: parseFloat(String(it.price || 0).replace(',', '.')) || 0,
+        selected: true
+      }));
+      setScannedItems(list);
+      appendScanLog(`✅ Éxito: Súper="${detectedSuper}", Productos detectados=${list.length}`);
     };
 
     // Escaneo directo desde el navegador hacia Google Gemini (evita bloqueos/cortes de Render)
     const scanDirectlyFromBrowser = async (imageBase64) => {
+      appendScanLog(`🔑 Pidiendo clave Gemini a /api/gemini/key-value...`);
       const keyRes = await fetch('/api/gemini/key-value');
-      if (!keyRes.ok) throw new Error('No se pudo obtener la clave de Gemini del servidor.');
+      if (!keyRes.ok) {
+        appendScanLog(`⚠️ /api/gemini/key-value devolvió HTTP ${keyRes.status}`);
+        throw new Error(`No se pudo obtener la clave del servidor (HTTP ${keyRes.status})`);
+      }
       const { apiKey } = await keyRes.json();
       if (!apiKey) {
         setShowKeyConfig(true);
+        appendScanLog(`❌ No hay API Key configurada en la base de datos.`);
         throw new Error('Configura primero tu clave gratuita de Gemini IA.');
       }
+      appendScanLog(`🔑 Clave recibida (${apiKey.slice(0, 6)}...${apiKey.slice(-3)})`);
 
       let mimeType = 'image/jpeg';
       let base64Data = imageBase64;
@@ -362,6 +382,7 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
 
       for (const model of models) {
         try {
+          appendScanLog(`🌐 Llamando directo a Google (${model})...`);
           const genConfig = { temperature: 0.1 };
           if (model.includes('2.5-flash')) {
             genConfig.thinkingConfig = { thinkingBudget: 0 };
@@ -386,11 +407,13 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
           const json = await resp.json();
           if (!resp.ok) {
             lastErr = json?.error?.message || `HTTP ${resp.status}`;
+            appendScanLog(`❌ ${model} rechazó la petición (HTTP ${resp.status}): ${lastErr}`);
             continue;
           }
 
           const parts = json?.candidates?.[0]?.content?.parts || [];
           const textOut = parts.map(p => p.text || '').join('\n').trim();
+          appendScanLog(`📥 Respuesta recibida de ${model} (${textOut.length} caracteres)`);
           const cleaned = textOut.replace(/```json/gi, '').replace(/```/g, '').trim();
           const firstBrace = cleaned.indexOf('{');
           const lastBrace = cleaned.lastIndexOf('}');
@@ -400,50 +423,62 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
               return parsed;
             }
           }
+          appendScanLog(`⚠️ ${model} devolvió texto sin formato JSON esperado.`);
         } catch (err) {
           lastErr = err.message;
+          appendScanLog(`💥 Excepción en ${model}: ${err.name}: ${err.message}`);
         }
       }
-      throw new Error(`No se pudo leer el ticket (${lastErr}).`);
+      throw new Error(`No se pudo leer directo con Gemini (${lastErr}).`);
     };
 
     try {
+      appendScanLog(`🖼️ Comprimiendo imagen en el navegador...`);
       const compressedBase64 = await compressImageToBase64(file);
+      const compKB = Math.round((compressedBase64.length * 0.75) / 1024);
+      appendScanLog(`✅ Imagen lista para enviar (~${compKB} KB en Base64)`);
 
-      // 1. Intentar primero directo desde el navegador hacia Gemini (más rápido, no pasa imagen grande por Render)
+      // 1. Intentar primero directo desde el navegador hacia Gemini
       try {
         const directData = await scanDirectlyFromBrowser(compressedBase64);
         applyDetectedResult(directData);
         return;
       } catch (directErr) {
-        console.warn('Fallback a escaneo vía servidor:', directErr.message);
+        appendScanLog(`🔄 Pasando a modo servidor (/api/shopping/scan-receipt) por: ${directErr.message}`);
       }
 
       // 2. Fallback: escaneo a través del servidor backend
+      appendScanLog(`📡 Enviando petición POST a /api/shopping/scan-receipt...`);
       const res = await fetch('/api/shopping/scan-receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: compressedBase64 })
       });
 
+      appendScanLog(`📡 Respuesta del servidor: HTTP ${res.status} ${res.statusText}`);
       const rawText = await res.text();
       let data = null;
       try {
         data = JSON.parse(rawText);
       } catch (_) {
-        throw new Error(`El servidor tardó demasiado o devolvió una respuesta inválida (HTTP ${res.status}). Inténtalo de nuevo.`);
+        appendScanLog(`❌ Respuesta no-JSON del servidor (primeros 120 chars): ${rawText.slice(0, 120)}`);
+        throw new Error(`El servidor tardó demasiado o devolvió HTML (HTTP ${res.status}).`);
       }
 
       if (!res.ok) {
+        appendScanLog(`❌ Error reportado por el servidor: ${data.error} - ${data.message}`);
         if (data.error === 'NEEDS_API_KEY' || data.error === 'INVALID_API_KEY') {
           setShowKeyConfig(true);
         }
+        setShowLogsPanel(true);
         setScanError(data.message || `Error HTTP ${res.status} al analizar el ticket.`);
       } else {
         applyDetectedResult(data);
       }
     } catch (err) {
       console.error('Error escaneando ticket:', err);
+      appendScanLog(`❌ FALLO FINAL: ${err.name || 'Error'} -> ${err.message || 'desconocido'}`);
+      setShowLogsPanel(true);
       setScanError(`Fallo al analizar (${err.message || 'desconocido'}).`);
     } finally {
       setScanLoading(false);
@@ -1202,11 +1237,30 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
             onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: '560px', width: '94%', maxHeight: '88vh', overflowY: 'auto', padding: '1.3rem', background: '#111827', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 20px 50px rgba(0,0,0,0.8)' }}
           >
-            <div className="modal-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '1.15rem' }}>
+            <div className="modal-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
+              <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', margin: 0, fontSize: '1.1rem' }}>
                 <span>📸</span> Escanear Ticket con IA
+                <span style={{ fontSize: '0.62rem', background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '6px', padding: '0.1rem 0.35rem', fontWeight: 700 }}>
+                  v6.4.5
+                </span>
               </h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowLogsPanel(!showLogsPanel)}
+                  style={{
+                    background: showLogsPanel ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.06)',
+                    border: '1px solid var(--glass-border)',
+                    color: '#93c5fd',
+                    borderRadius: '8px',
+                    padding: '0.25rem 0.45rem',
+                    fontSize: '0.68rem',
+                    cursor: 'pointer'
+                  }}
+                  title="Ver registro de eventos (Logs)"
+                >
+                  📋 Logs {scanLogs.length > 0 ? `(${scanLogs.length})` : ''}
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowKeyConfig(!showKeyConfig)}
@@ -1296,9 +1350,110 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
                 padding: '0.7rem',
                 borderRadius: '10px',
                 fontSize: '0.78rem',
-                marginBottom: '1rem'
+                marginBottom: '0.8rem',
+                wordBreak: 'break-word'
               }}>
                 ⚠️ {scanError}
+              </div>
+            )}
+
+            {(showLogsPanel || scanLogs.length > 0) && (
+              <div style={{
+                background: '#090d16',
+                border: '1px solid rgba(147, 197, 253, 0.25)',
+                borderRadius: '10px',
+                padding: '0.65rem',
+                marginBottom: '1rem',
+                fontSize: '0.72rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', gap: '0.4rem', flexWrap: 'wrap' }}>
+                  <span style={{ color: '#93c5fd', fontWeight: 700 }}>
+                    📋 Registro de Eventos (Logs de Diagnóstico)
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.35rem' }}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const text = scanLogs.length > 0
+                          ? scanLogs.join('\n')
+                          : `[Sin eventos aún - App v6.4.5 - UA: ${navigator.userAgent}]`;
+                        try {
+                          await navigator.clipboard.writeText(text);
+                          setLogsCopied(true);
+                          setTimeout(() => setLogsCopied(false), 3000);
+                        } catch (_) {
+                          // Fallback textarea copy
+                          const ta = document.createElement('textarea');
+                          ta.value = text;
+                          document.body.appendChild(ta);
+                          ta.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(ta);
+                          setLogsCopied(true);
+                          setTimeout(() => setLogsCopied(false), 3000);
+                        }
+                      }}
+                      style={{
+                        background: logsCopied ? '#059669' : 'rgba(59, 130, 246, 0.25)',
+                        border: '1px solid rgba(59, 130, 246, 0.45)',
+                        color: '#fff',
+                        borderRadius: '6px',
+                        padding: '0.22rem 0.55rem',
+                        fontSize: '0.68rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {logsCopied ? '✅ ¡Copiado!' : '📋 Copiar Logs'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          if ('serviceWorker' in navigator) {
+                            const regs = await navigator.serviceWorker.getRegistrations();
+                            for (const r of regs) await r.unregister();
+                          }
+                          if ('caches' in window) {
+                            const keys = await caches.keys();
+                            for (const k of keys) await caches.delete(k);
+                          }
+                        } catch (_) {}
+                        window.location.href = window.location.pathname + '?v=' + Date.now();
+                      }}
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        color: '#cbd5e1',
+                        borderRadius: '6px',
+                        padding: '0.22rem 0.5rem',
+                        fontSize: '0.68rem',
+                        cursor: 'pointer'
+                      }}
+                      title="Limpiar caché del navegador y recargar"
+                    >
+                      🔄 Limpiar Caché
+                    </button>
+                  </div>
+                </div>
+                <pre style={{
+                  margin: 0,
+                  maxHeight: '170px',
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontFamily: 'monospace',
+                  color: '#e2e8f0',
+                  lineHeight: 1.4,
+                  fontSize: '0.68rem',
+                  background: 'rgba(0,0,0,0.35)',
+                  padding: '0.5rem',
+                  borderRadius: '6px'
+                }}>
+                  {scanLogs.length > 0
+                    ? scanLogs.join('\n')
+                    : 'Pulsa "Subir o Hacer Foto del Ticket" para registrar paso a paso lo que ocurre.'}
+                </pre>
               </div>
             )}
 

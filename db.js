@@ -24,7 +24,14 @@ const defaultData = {
   careLogs: [],
   planning: defaultPlanning,
   birthdays: [],
-  productPrices: []
+  productPrices: [],
+  gymWorkouts: [],
+  gymBodyWeights: [],
+  gymGoals: {
+    Ismael: { targetDaysPerWeek: 3, targetWeightKg: null },
+    Sandra: { targetDaysPerWeek: 3, targetWeightKg: null }
+  },
+  gymCustomRoutines: []
 };
 
 // Leer base de datos
@@ -57,6 +64,25 @@ function readDB() {
     }
     if (!data.productPrices) {
       data.productPrices = [];
+      changed = true;
+    }
+    if (!data.gymWorkouts) {
+      data.gymWorkouts = [];
+      changed = true;
+    }
+    if (!data.gymBodyWeights) {
+      data.gymBodyWeights = [];
+      changed = true;
+    }
+    if (!data.gymGoals) {
+      data.gymGoals = {
+        Ismael: { targetDaysPerWeek: 3, targetWeightKg: null },
+        Sandra: { targetDaysPerWeek: 3, targetWeightKg: null }
+      };
+      changed = true;
+    }
+    if (!data.gymCustomRoutines) {
+      data.gymCustomRoutines = [];
       changed = true;
     }
     if (changed) {
@@ -961,6 +987,128 @@ export const db = {
     data.productPrices = data.productPrices.filter(p => p.id !== id);
     writeDB(data);
     return data.productPrices;
+  },
+
+  // --- GIMNASIO MARBELLA & PERSONAL TRAINER ---
+  getGymData: () => {
+    const data = readDB();
+    return {
+      workouts: data.gymWorkouts || [],
+      bodyWeights: data.gymBodyWeights || [],
+      goals: data.gymGoals || {
+        Ismael: { targetDaysPerWeek: 3, targetWeightKg: null },
+        Sandra: { targetDaysPerWeek: 3, targetWeightKg: null }
+      },
+      customRoutines: data.gymCustomRoutines || []
+    };
+  },
+  addGymWorkout: (workout) => {
+    const data = readDB();
+    if (!data.gymWorkouts) data.gymWorkouts = [];
+    const newWorkout = {
+      id: Date.now().toString() + '-' + Math.floor(Math.random() * 10000),
+      user: workout.user || 'Ismael',
+      date: workout.date || new Date().toISOString().split('T')[0],
+      routineName: (workout.routineName || 'Entrenamiento en Gimnasio Marbella').trim(),
+      category: workout.category || 'Full Body + Cardio',
+      durationMin: Number(workout.durationMin) || 45,
+      caloriesBurned: Number(workout.caloriesBurned) || 300,
+      feeling: workout.feeling || '💪 Bien',
+      notes: (workout.notes || '').trim(),
+      exercises: Array.isArray(workout.exercises) ? workout.exercises.map(ex => ({
+        name: (ex.name || '').trim(),
+        machine: (ex.machine || '').trim(),
+        sets: Number(ex.sets) || 3,
+        reps: String(ex.reps || '12'),
+        weightKg: ex.weightKg !== undefined && ex.weightKg !== '' ? Number(ex.weightKg) : 0,
+        durationMin: ex.durationMin !== undefined && ex.durationMin !== '' ? Number(ex.durationMin) : 0,
+        completed: ex.completed !== false
+      })) : [],
+      createdAt: new Date().toISOString()
+    };
+    data.gymWorkouts.unshift(newWorkout);
+    writeDB(data);
+    return data.gymWorkouts;
+  },
+  deleteGymWorkout: (id) => {
+    const data = readDB();
+    if (!data.gymWorkouts) return [];
+    data.gymWorkouts = data.gymWorkouts.filter(w => w.id !== id);
+    writeDB(data);
+    return data.gymWorkouts;
+  },
+  addGymBodyWeight: (entry) => {
+    const data = readDB();
+    if (!data.gymBodyWeights) data.gymBodyWeights = [];
+    const weightNum = parseFloat(String(entry.weightKg).replace(',', '.'));
+    if (isNaN(weightNum) || weightNum <= 0) return data.gymBodyWeights;
+
+    const newEntry = {
+      id: Date.now().toString() + '-' + Math.floor(Math.random() * 10000),
+      user: entry.user || 'Ismael',
+      date: entry.date || new Date().toISOString().split('T')[0],
+      weightKg: Number(weightNum.toFixed(1)),
+      note: (entry.note || '').trim(),
+      createdAt: new Date().toISOString()
+    };
+    data.gymBodyWeights.unshift(newEntry);
+    data.gymBodyWeights.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    writeDB(data);
+    return data.gymBodyWeights;
+  },
+  deleteGymBodyWeight: (id) => {
+    const data = readDB();
+    if (!data.gymBodyWeights) return [];
+    data.gymBodyWeights = data.gymBodyWeights.filter(w => w.id !== id);
+    writeDB(data);
+    return data.gymBodyWeights;
+  },
+  updateGymGoal: (user, goalData) => {
+    const data = readDB();
+    if (!data.gymGoals) {
+      data.gymGoals = {
+        Ismael: { targetDaysPerWeek: 3, targetWeightKg: null },
+        Sandra: { targetDaysPerWeek: 3, targetWeightKg: null }
+      };
+    }
+    if (!data.gymGoals[user]) {
+      data.gymGoals[user] = { targetDaysPerWeek: 3, targetWeightKg: null };
+    }
+    if (goalData.targetDaysPerWeek !== undefined) {
+      data.gymGoals[user].targetDaysPerWeek = Number(goalData.targetDaysPerWeek) || 3;
+    }
+    if (goalData.targetWeightKg !== undefined) {
+      const w = parseFloat(String(goalData.targetWeightKg).replace(',', '.'));
+      data.gymGoals[user].targetWeightKg = (!isNaN(w) && w > 0) ? Number(w.toFixed(1)) : null;
+    }
+    writeDB(data);
+    return data.gymGoals;
+  },
+  saveCustomGymRoutine: (routine) => {
+    const data = readDB();
+    if (!data.gymCustomRoutines) data.gymCustomRoutines = [];
+    const newRoutine = {
+      id: 'custom-' + Date.now().toString(),
+      title: (routine.title || 'Rutina Personalizada').trim(),
+      subtitle: (routine.subtitle || 'Creada por tu Personal Trainer').trim(),
+      duration: routine.duration || '45-55 min',
+      calories: routine.calories || '~350-450 kcal',
+      goal: routine.goal || 'Quema de grasa y tonificación',
+      coachTip: routine.coachTip || 'Mantén descansos de 60-75 segundos entre series para mantener las pulsaciones activas.',
+      exercises: Array.isArray(routine.exercises) ? routine.exercises : [],
+      createdBy: routine.createdBy || 'Entrenador IA',
+      createdAt: new Date().toISOString()
+    };
+    data.gymCustomRoutines.unshift(newRoutine);
+    writeDB(data);
+    return data.gymCustomRoutines;
+  },
+  deleteCustomGymRoutine: (id) => {
+    const data = readDB();
+    if (!data.gymCustomRoutines) return [];
+    data.gymCustomRoutines = data.gymCustomRoutines.filter(r => r.id !== id);
+    writeDB(data);
+    return data.gymCustomRoutines;
   }
 };
 

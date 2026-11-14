@@ -1248,6 +1248,218 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin bloq
   }
 });
 
+// --- GIMNASIO MARBELLA & PERSONAL TRAINER ---
+app.get('/api/gym', (req, res) => {
+  try {
+    res.json(db.getGymData());
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener datos del gimnasio' });
+  }
+});
+
+app.post('/api/gym/workouts', async (req, res) => {
+  try {
+    const { workout, together } = req.body;
+    if (!workout) {
+      return res.status(400).json({ error: 'Datos de entrenamiento requeridos' });
+    }
+
+    let workouts = db.addGymWorkout(workout);
+    if (together) {
+      const partner = getOtherUser(workout.user || 'Ismael');
+      workouts = db.addGymWorkout({ ...workout, user: partner });
+    }
+
+    const actor = workout.user || 'Ismael';
+    const pushTitle = together ? '🏋️ ¡Entreno en pareja completado!' : '🏋️ ¡Entreno completado en el Marbella!';
+    const pushBody = together
+      ? `¡Ismael y Sandra habéis completado "${workout.routineName || 'Entrenamiento'}" (${workout.durationMin || 45} min)! 🔥`
+      : `${actor} acaba de terminar "${workout.routineName || 'Entrenamiento'}" (${workout.durationMin || 45} min, ~${workout.caloriesBurned || 300} kcal). 💪`;
+
+    sendPushNotification(getOtherUser(actor), pushTitle, pushBody).catch(() => {});
+
+    res.status(201).json({ workouts });
+  } catch (error) {
+    console.error('[Gym Workout Error]', error);
+    res.status(500).json({ error: 'Error al guardar el entrenamiento' });
+  }
+});
+
+app.delete('/api/gym/workouts/:id', (req, res) => {
+  try {
+    const workouts = db.deleteGymWorkout(req.params.id);
+    res.json({ workouts });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar el entrenamiento' });
+  }
+});
+
+app.post('/api/gym/weights', (req, res) => {
+  try {
+    const bodyWeights = db.addGymBodyWeight(req.body);
+    res.status(201).json({ bodyWeights });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al registrar el peso' });
+  }
+});
+
+app.delete('/api/gym/weights/:id', (req, res) => {
+  try {
+    const bodyWeights = db.deleteGymBodyWeight(req.params.id);
+    res.json({ bodyWeights });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar el registro de peso' });
+  }
+});
+
+app.post('/api/gym/goals', (req, res) => {
+  try {
+    const { user, targetDaysPerWeek, targetWeightKg } = req.body;
+    if (!user) return res.status(400).json({ error: 'Usuario requerido' });
+    const goals = db.updateGymGoal(user, { targetDaysPerWeek, targetWeightKg });
+    res.json({ goals });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar objetivos' });
+  }
+});
+
+app.post('/api/gym/routines', (req, res) => {
+  try {
+    const customRoutines = db.saveCustomGymRoutine(req.body);
+    res.status(201).json({ customRoutines });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al guardar rutina personalizada' });
+  }
+});
+
+app.delete('/api/gym/routines/:id', (req, res) => {
+  try {
+    const customRoutines = db.deleteCustomGymRoutine(req.params.id);
+    res.json({ customRoutines });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar rutina personalizada' });
+  }
+});
+
+app.post('/api/gym/ai-coach', async (req, res) => {
+  try {
+    const { prompt, user, durationMin } = req.body;
+    const apiKey = db.getGeminiKey();
+    const targetMins = Number(durationMin) || 45;
+
+    if (apiKey) {
+      const systemPrompt = `Eres el Entrenador Personal (Personal Trainer) de Ismael y Sandra en el Gimnasio Marbella (Fitness-Place Plaza Elíptica, Vía Lusitana 1, Carabanchel, Madrid).
+Su objetivo principal es PONERSE EN FORMA, TONIFICAR y PERDER PESO de forma saludable, amena y sin lesionarse.
+Máquinas disponibles en el Gimnasio Marbella:
+- Cardio: Cinta de correr, Bicicleta elíptica, Bicicleta estática / Spinning, Steps.
+- Pierna/Glúteo: Prensa de piernas inclinada/sentada ( placas ), Extensión de cuádriceps en máquina, Curl femoral tumbado/sentado, Máquina de abductores y aductores, Multipower (barra guiada), Sentadilla con mancuerna o TRX.
+- Torso (Espalda/Pecho/Hombro/Brazos): Jalón al pecho en polea alta, Remo sentado en polea baja (Gironda), Press de pecho sentado en máquina, Contractora pectoral (Pec Deck), Press de hombros en máquina, Polea de tríceps (cuerda/barra), Curl de bíceps en polea o mancuernas.
+- Core y Funcional: Colchonetas, Fitball, Cuerdas TRX, Bancos inclinados/planos, Clases de Spinning, Zumba y Pilates.
+
+El usuario (${user || 'Ismael & Sandra'}) pide: "${prompt || 'Hazme una rutina quema-grasa para hoy'}" con duración aproximada de ${targetMins} minutos.
+Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura:
+{
+  "title": "Nombre motivador de la sesión",
+  "subtitle": "Enfoque principal (ej: Quema-grasa sin impacto / Glúteo y Core / Full Body Express)",
+  "duration": "${targetMins} min",
+  "calories": "~350-450 kcal",
+  "goal": "Pérdida de grasa y tonificación",
+  "coachTip": "Consejo cercano y motivador de 2 frases de su entrenador personal para esta sesión",
+  "exercises": [
+    {
+      "name": "Nombre del ejercicio",
+      "machine": "Zona / Máquina exacta del Gimnasio Marbella",
+      "sets": 3,
+      "reps": "12-15",
+      "weightKg": 0,
+      "durationMin": 0,
+      "tip": "Consejo rápido de postura o ritmo"
+    }
+  ]
+}`;
+
+      const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+      for (const model of models) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 18000);
+          const bodyPayload = {
+            contents: [{ parts: [{ text: systemPrompt }] }],
+            generationConfig: { temperature: 0.4, responseMimeType: 'application/json' }
+          };
+          if (model.startsWith('gemini-2.5')) {
+            bodyPayload.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+          }
+          const resp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(bodyPayload),
+              signal: controller.signal
+            }
+          );
+          clearTimeout(timer);
+          if (resp.ok) {
+            const data = await resp.json();
+            const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            const cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+            const firstBrace = cleaned.indexOf('{');
+            const lastBrace = cleaned.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+              const parsed = JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+              if (parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
+                return res.json({ routine: parsed, source: model });
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Fallback inteligente si no hay clave de Gemini o falla la red
+    const lower = (prompt || '').toLowerCase();
+    const isLowImpact = lower.includes('rodilla') || lower.includes('impacto') || lower.includes('suave');
+    const isLowerBody = lower.includes('pierna') || lower.includes('gluteo') || lower.includes('glúteo');
+    const isUpperBody = lower.includes('brazo') || lower.includes('pecho') || lower.includes('espalda') || lower.includes('torso');
+
+    const fallbackRoutine = {
+      title: isLowImpact
+        ? '🛡️ Sesión Quema-Grasa Sin Impacto Articular'
+        : isLowerBody
+        ? '🍑 Pierna, Glúteo y Core Quema-Calorías'
+        : isUpperBody
+        ? '💪 Torso Tonificado + Cardio Metabólico'
+        : `🔥 Circuito Personal Trainer (${targetMins} min)`,
+      subtitle: 'Diseñada para las máquinas del Gimnasio Marbella (Carabanchel)',
+      duration: `${targetMins} min`,
+      calories: `~${Math.round(targetMins * 8)} kcal`,
+      goal: 'Perder peso manteniendo masa muscular',
+      coachTip: `¡Vamos equipo! Empezad con 5 min suaves para entrar en calor, controlad la bajada en cada máquina (2 segundos al bajar) y rematad con el bloque de cardio continuo para maximizar la quema de grasa.`,
+      exercises: isLowImpact ? [
+        { name: 'Calentamiento en Bicicleta Estática', machine: 'Zona Cardio - Bici Estática', sets: 1, reps: '8 min', weightKg: 0, durationMin: 8, tip: 'Resistencia suave-media, espalda cómoda.' },
+        { name: 'Jalón al Pecho en Polea Alta', machine: 'Sala Musculación - Polea Alta', sets: 3, reps: '12-15', weightKg: 25, durationMin: 0, tip: 'Saca pecho y lleva la barra hacia la clavícula sin columpiarte.' },
+        { name: 'Press de Pecho Sentado en Máquina', machine: 'Sala Musculación - Máquina Pecho', sets: 3, reps: '12-15', weightKg: 20, durationMin: 0, tip: 'Hombros atrás pegados al respaldo.' },
+        { name: 'Curl Femoral Sentado/Tumbado', machine: 'Sala Musculación - Máquina Femoral', sets: 3, reps: '15', weightKg: 20, durationMin: 0, tip: 'Trabaja la pierna sin cargar la rodilla.' },
+        { name: 'Abductores en Máquina (Glúteo medio)', machine: 'Sala Musculación - Máquina Abductores', sets: 3, reps: '15-20', weightKg: 30, durationMin: 0, tip: 'Aguanta 1 segundo abierto en cada repetición.' },
+        { name: 'Cardio Quema-Grasa en Elíptica', machine: 'Zona Cardio - Elíptica', sets: 1, reps: '20 min', weightKg: 0, durationMin: 20, tip: 'Cero impacto en articulaciones y altísimo gasto calórico.' }
+      ] : [
+        { name: 'Activación en Elíptica o Cinta', machine: 'Zona Cardio - Elíptica / Cinta', sets: 1, reps: '5 min', weightKg: 0, durationMin: 5, tip: 'Ritmo progresivo para subir pulsaciones.' },
+        { name: 'Prensa de Piernas en Máquina', machine: 'Sala Musculación - Prensa de Placas', sets: 3, reps: '12-15', weightKg: 45, durationMin: 0, tip: 'Pies a la anchura de los hombros, no bloquees las rodillas al estirar.' },
+        { name: 'Jalón al Pecho en Polea', machine: 'Sala Musculación - Polea Alta', sets: 3, reps: '12', weightKg: 30, durationMin: 0, tip: 'Controla la subida de la barra sin dar tirones.' },
+        { name: 'Press de Pecho o Contractora', machine: 'Sala Musculación - Máquina Pectoral', sets: 3, reps: '12-15', weightKg: 20, durationMin: 0, tip: 'Exhala al empujar y mantén el abdomen firme.' },
+        { name: 'Puente de Glúteo + Plancha en Colchoneta', machine: 'Zona Funcional - Colchoneta', sets: 3, reps: '15 + 30s', weightKg: 0, durationMin: 0, tip: 'Aprieta glúteo arriba 1 segundo.' },
+        { name: 'Caminata Inclinada Quema-Grasa', machine: 'Zona Cardio - Cinta de Correr', sets: 1, reps: '20 min', weightKg: 0, durationMin: 20, tip: 'Pendiente 6-8% a 4.8 - 5.3 km/h sin agarrarte a los laterales.' }
+      ]
+    };
+
+    res.json({ routine: fallbackRoutine, source: 'builtin-trainer' });
+  } catch (error) {
+    console.error('[AI Coach Error]', error);
+    res.status(500).json({ error: 'Error al generar rutina del entrenador' });
+  }
+});
+
 // 12. BITÁCORA DE MANTENIMIENTO
 app.get('/api/maintenance', (req, res) => {
   try {

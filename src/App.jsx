@@ -15,6 +15,7 @@ import MaintenanceLog from './components/MaintenanceLog';
 import StatsDashboard from './components/StatsDashboard';
 import WarrantiesManager from './components/WarrantiesManager';
 import BirthdayManager from './components/BirthdayManager';
+import GymManager from './components/GymManager';
 
 
 function App() {
@@ -132,6 +133,13 @@ function App() {
         </div>
       )}
 
+      {/* Gimnasio Marbella & Personal Trainer */}
+      {activeTab === 'gym' && (
+        <div style={{ padding: '0 1rem 1.5rem 1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
+          <GymManager currentUser={currentUser} />
+        </div>
+      )}
+
       {/* Planificador Semanal / Recetario */}
       {showSection('planning') && (
         <div className="weekly-planner-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
@@ -170,8 +178,8 @@ function App() {
         </div>
       )}
 
-      {/* Grid del Dashboard en Escritorio (cuando no estamos en 'home' ni en 'planning') */}
-      {activeTab !== 'home' && activeTab !== 'planning' && (
+      {/* Grid del Dashboard en Escritorio (cuando no estamos en 'home' ni en 'planning' ni en 'gym' ni en 'warranties') */}
+      {activeTab !== 'home' && activeTab !== 'planning' && activeTab !== 'gym' && activeTab !== 'warranties' && (
         <main className={`dashboard-grid ${isMobile ? 'mobile-tab-view' : ''}`}>
           {/* PESTAÑA 1: LISTA DE COMPRAS */}
           {showSection('shopping') && (
@@ -306,6 +314,15 @@ function App() {
         >
           <span className="mobile-nav-icon">🐹</span>
           <span>Cuidados</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('gym')}
+          className={`mobile-nav-btn ${activeTab === 'gym' ? 'active' : ''}`}
+          aria-label="Ver gimnasio y personal trainer"
+        >
+          <span className="mobile-nav-icon">🏋️</span>
+          <span>Gym</span>
         </button>
       </nav>
 

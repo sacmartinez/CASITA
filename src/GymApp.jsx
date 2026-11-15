@@ -198,12 +198,25 @@ const MOTIVATIONAL_QUOTES = [
   "✨ Cada gota de esfuerzo de hoy es energía, salud y confianza para mañana. ¡Tú puedes con esto y más!"
 ];
 
+const USER_PINS = {
+  Ismael: '280894',
+  Sandra: '100415'
+};
+
 function GymApp({ onBackToCasita }) {
-  const [activeUser, setActiveUser] = useState(() => {
+  const [unlockedUser, setUnlockedUser] = useState(() => {
+    const saved = localStorage.getItem('marbella_fit_unlocked_user');
+    return (saved === 'Ismael' || saved === 'Sandra') ? saved : null;
+  });
+  const [loginTargetUser, setLoginTargetUser] = useState(() => {
     const saved = localStorage.getItem('hogar_user');
     return (saved === 'Ismael' || saved === 'Sandra') ? saved : 'Ismael';
   });
-  // 4 Pestañas super simples: 'gym' (Hoy en el Gym) | 'home' (En Casa) | 'nutrition' (Comida y Peso) | 'machines' (Máquinas y Planes)
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+
+  const activeUser = unlockedUser || 'Ismael';
+  // Pestañas: Ismael tiene 'gym' | 'home' | 'nutrition' | 'machines'. Sandra tiene 'gym' | 'nutrition' | 'machines' (sin 'home')
   const [activeTab, setActiveTab] = useState('gym');
 
   // Datos del servidor
@@ -610,9 +623,27 @@ function GymApp({ onBackToCasita }) {
   const activeGoalObj = GOAL_OPTIONS.find(g => g.id === (goals[activeUser]?.goalType || 'grasa')) || GOAL_OPTIONS[0];
   const recommendedDailyKcal = activeGoalObj.kcalTarget?.[activeUser] || 1850;
 
-  const switchUser = (u) => {
-    setActiveUser(u);
-    localStorage.setItem('hogar_user', u);
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    if (pinInput.trim() === USER_PINS[loginTargetUser]) {
+      setUnlockedUser(loginTargetUser);
+      localStorage.setItem('marbella_fit_unlocked_user', loginTargetUser);
+      localStorage.setItem('hogar_user', loginTargetUser);
+      setPinInput('');
+      setPinError('');
+      if (loginTargetUser === 'Sandra' && activeTab === 'home') {
+        setActiveTab('gym');
+      }
+    } else {
+      setPinError('Contraseña incorrecta. Inténtalo de nuevo.');
+    }
+  };
+
+  const handleLogoutProfile = () => {
+    setUnlockedUser(null);
+    localStorage.removeItem('marbella_fit_unlocked_user');
+    setPinInput('');
+    setPinError('');
   };
 
   // Estilos claros, limpios y muy legibles
@@ -686,6 +717,110 @@ function GymApp({ onBackToCasita }) {
   const currentGymDay = GYM_DAYS[selectedDayIdx] || GYM_DAYS[0];
   const currentHomeRoutine = HOME_ROUTINES[selectedHomeIdx] || HOME_ROUTINES[0];
 
+  const visibleTabs = activeUser === 'Ismael'
+    ? [
+        { id: 'gym', icon: '🏋️', label: 'Hoy (Gym)' },
+        { id: 'home', icon: '🏠', label: 'En Casa' },
+        { id: 'nutrition', icon: '🍎', label: 'Comida y Peso' },
+        { id: 'machines', icon: '🏢', label: 'Máquinas y Plan' }
+      ]
+    : [
+        { id: 'gym', icon: '🏋️', label: 'Hoy (Gym)' },
+        { id: 'nutrition', icon: '🍎', label: 'Comida y Peso' },
+        { id: 'machines', icon: '🏢', label: 'Máquinas y Plan' }
+      ];
+
+  // Si aún no ha iniciado sesión con su contraseña individual, mostrar pantalla de acceso
+  if (!unlockedUser) {
+    return (
+      <div style={{ ...S.page, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.2rem' }}>
+        <div style={{ ...S.card, maxWidth: '400px', width: '100%', padding: '1.6rem', textAlign: 'center' }}>
+          <div style={{ fontSize: '2.6rem', marginBottom: '0.3rem' }}>🏋️</div>
+          <h1 style={{ margin: '0 0 0.25rem 0', fontSize: '1.35rem', fontWeight: 900, color: '#0f172a' }}>
+            Marbella Fit
+          </h1>
+          <p style={{ margin: '0 0 1.2rem 0', fontSize: '0.82rem', color: '#64748b' }}>
+            Elige tu perfil personal e introduce tu contraseña
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem', marginBottom: '1.1rem' }}>
+            {['Ismael', 'Sandra'].map((u) => {
+              const isSel = loginTargetUser === u;
+              return (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => { setLoginTargetUser(u); setPinError(''); setPinInput(''); }}
+                  style={{
+                    padding: '0.85rem 0.5rem',
+                    borderRadius: '14px',
+                    border: isSel ? (u === 'Ismael' ? '2px solid #2563eb' : '2px solid #db2777') : '1px solid #e2e8f0',
+                    background: isSel ? (u === 'Ismael' ? '#eff6ff' : '#fdf2f8') : '#f8fafc',
+                    color: '#0f172a',
+                    fontWeight: 800,
+                    fontSize: '0.92rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ fontSize: '1.5rem', marginBottom: '0.2rem' }}>{u === 'Ismael' ? '👦' : '👧'}</div>
+                  {u}
+                </button>
+              );
+            })}
+          </div>
+
+          <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value)}
+              placeholder={`Contraseña de ${loginTargetUser}`}
+              style={{
+                ...S.input,
+                textAlign: 'center',
+                fontSize: '1.15rem',
+                letterSpacing: '4px',
+                fontWeight: 800,
+                padding: '0.75rem'
+              }}
+              autoFocus
+              required
+            />
+
+            {pinError && (
+              <div style={{ color: '#dc2626', fontSize: '0.78rem', fontWeight: 700, background: '#fef2f2', padding: '0.5rem', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                ⚠️ {pinError}
+              </div>
+            )}
+
+            <button type="submit" style={{ ...S.btnGreen, width: '100%', padding: '0.85rem', fontSize: '0.95rem' }}>
+              🔓 Entrar al Perfil de {loginTargetUser}
+            </button>
+
+            {onBackToCasita && (
+              <button
+                type="button"
+                onClick={onBackToCasita}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#64748b',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  marginTop: '0.3rem'
+                }}
+              >
+                ← Volver a Casita Hub
+              </button>
+            )}
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={S.page}>
       {/* CABECERA SIMPLE Y DIRECTA */}
@@ -711,8 +846,8 @@ function GymApp({ onBackToCasita }) {
               </button>
             )}
             <div>
-              <div style={{ fontWeight: 900, fontSize: '1.05rem', color: '#0f172a' }}>
-                🏋️ Marbella Fit
+              <div style={{ fontWeight: 900, fontSize: '1.02rem', color: '#0f172a' }}>
+                {activeUser === 'Ismael' ? '👦 Gym de Ismael' : '👧 Gym de Sandra'}
               </div>
               <div style={{ fontSize: '0.68rem', color: '#059669', fontWeight: 700 }}>
                 {activeGoalObj.icon} {activeGoalObj.shortLabel}
@@ -759,29 +894,24 @@ function GymApp({ onBackToCasita }) {
               </button>
             )}
 
-            {/* Cambiar entre Ismael y Sandra */}
-            <div style={{ display: 'flex', background: '#f1f5f9', padding: '0.18rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-              {['Ismael', 'Sandra'].map((u) => (
-                <button
-                  key={u}
-                  type="button"
-                  onClick={() => switchUser(u)}
-                  style={{
-                    background: activeUser === u ? '#ffffff' : 'transparent',
-                    color: activeUser === u ? '#0f172a' : '#64748b',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '0.3rem 0.6rem',
-                    fontSize: '0.76rem',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    boxShadow: activeUser === u ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-                  }}
-                >
-                  {u === 'Ismael' ? '👦 Ismael' : '👧 Sandra'}
-                </button>
-              ))}
-            </div>
+            {/* Botón para bloquear / cambiar de usuario con contraseña */}
+            <button
+              type="button"
+              onClick={handleLogoutProfile}
+              style={{
+                background: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                color: '#334155',
+                borderRadius: '10px',
+                padding: '0.32rem 0.6rem',
+                fontSize: '0.73rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+              title="Cambiar de perfil"
+            >
+              🔒 Cambiar perfil
+            </button>
           </div>
         </div>
       </header>
@@ -857,7 +987,7 @@ function GymApp({ onBackToCasita }) {
                 <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#059669', textTransform: 'uppercase' }}>
                   📍 Al llegar al Gimnasio Marbella · ¿Qué toca hoy?
                 </span>
-                {!didHomeToday && (
+                {activeUser === 'Ismael' && !didHomeToday && (
                   <button
                     type="button"
                     onClick={() => setActiveTab('home')}
@@ -1624,22 +1754,22 @@ function GymApp({ onBackToCasita }) {
               </div>
             </div>
 
-            {/* Historial reciente de entrenamientos */}
+            {/* Historial reciente de entrenamientos del perfil activo */}
             <div style={S.card}>
               <h3 style={{ margin: '0 0 0.65rem 0', fontSize: '1rem', color: '#0f172a' }}>
-                🏅 Últimos Entrenamientos Completados ({workouts.length})
+                🏅 Historial de Entrenamientos de {activeUser} ({workouts.filter(w => w.user === activeUser).length})
               </h3>
-              {workouts.length === 0 ? (
+              {workouts.filter(w => w.user === activeUser).length === 0 ? (
                 <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>
-                  Aquí irán apareciendo todos vuestros entrenos del Gimnasio Marbella y de casa.
+                  Aquí irán apareciendo todos tus entrenos completados, {activeUser}.
                 </p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                  {workouts.slice(0, 15).map(w => (
+                  {workouts.filter(w => w.user === activeUser).slice(0, 15).map(w => (
                     <div key={w.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.7rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                       <div>
                         <div style={{ fontSize: '0.84rem', fontWeight: 800, color: '#0f172a' }}>
-                          {w.user === 'Ismael' ? '👦 Ismael' : '👧 Sandra'} · {w.routineName}
+                          {w.routineName}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
                           📅 {w.date} · ⏱️ {w.durationMin} min · 🔥 ~{w.caloriesBurned} kcal · {w.feeling}
@@ -1669,14 +1799,15 @@ function GymApp({ onBackToCasita }) {
 
       </main>
 
-      {/* BARRA INFERIOR DE 4 BOTONES GRANDES Y CLAROS */}
-      <nav style={S.bottomNav} aria-label="Menú principal Marbella Fit">
-        {[
-          { id: 'gym', icon: '🏋️', label: 'Hoy (Gym)' },
-          { id: 'home', icon: '🏠', label: 'En Casa' },
-          { id: 'nutrition', icon: '🍎', label: 'Comida y Peso' },
-          { id: 'machines', icon: '🏢', label: 'Máquinas y Plan' }
-        ].map(tab => {
+      {/* BARRA INFERIOR ADAPTADA AL PERFIL (4 pestañas para Ismael con En Casa, 3 para Sandra solo Gym) */}
+      <nav
+        style={{
+          ...S.bottomNav,
+          gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)`
+        }}
+        aria-label="Menú principal Marbella Fit"
+      >
+        {visibleTabs.map(tab => {
           const isAct = activeTab === tab.id;
           return (
             <button

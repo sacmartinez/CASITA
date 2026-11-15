@@ -204,6 +204,273 @@ const USER_PINS = {
   Sandra: '100415'
 };
 
+// Detecta si un ejercicio es por tiempo (segundos o minutos) y devuelve los segundos totales
+function parseExerciseDurationSeconds(text = '') {
+  const s = String(text).toLowerCase();
+  // Buscar segundos explícitos: "35 seg", "30s", "40 segundos"
+  const secMatch = s.match(/(\d+)\s*(seg|segundos|s\b)/i);
+  if (secMatch) {
+    return parseInt(secMatch[1], 10);
+  }
+  // Buscar minutos explícitos: "20 min", "15-20 min", "18 minutos"
+  const minMatch = s.match(/(\d+)(?:\s*-\s*(\d+))?\s*(min|minutos)/i);
+  if (minMatch) {
+    const mins = parseInt(minMatch[1], 10);
+    return mins * 60;
+  }
+  return null;
+}
+
+// Pitido suave al terminar el cronómetro sin requerir archivos externos
+function playTimerFinishBeep() {
+  try {
+    if (navigator.vibrate) navigator.vibrate([200, 100, 250]);
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    [523.25, 659.25, 783.99].forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.18, ctx.currentTime + idx * 0.16);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.16 + 0.15);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + idx * 0.16);
+      osc.stop(ctx.currentTime + idx * 0.16 + 0.15);
+    });
+  } catch (_) {}
+}
+
+// Cronómetro integrado directamente dentro de la ficha de cualquier ejercicio por tiempo
+function InlineExerciseTimer({ initialSeconds, sets = 1, onComplete }) {
+  const [baseSeconds, setBaseSeconds] = useState(initialSeconds);
+  const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
+  const [running, setRunning] = useState(false);
+  const [finished, setFinished] = useState(false);
+  const [currentSet, setCurrentSet] = useState(1);
+
+  useEffect(() => {
+    if (!running) {
+      setBaseSeconds(initialSeconds);
+      setSecondsLeft(initialSeconds);
+      setFinished(false);
+    }
+  }, [initialSeconds]);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(id);
+          setRunning(false);
+          setFinished(true);
+          playTimerFinishBeep();
+          if (onComplete) onComplete();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  const formatMMSS = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const step = baseSeconds >= 120 ? 60 : 5;
+  const stepLabel = baseSeconds >= 120 ? '1m' : '5s';
+  const pct = baseSeconds > 0 ? Math.round(((baseSeconds - secondsLeft) / baseSeconds) * 100) : 0;
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        marginTop: '0.6rem',
+        background: finished ? '#ecfdf5' : running ? '#eff6ff' : '#f8fafc',
+        border: finished ? '2px solid #10b981' : running ? '2px solid #3b82f6' : '1px solid #cbd5e1',
+        borderRadius: '12px',
+        padding: '0.6rem 0.75rem',
+        transition: 'all 0.2s ease'
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{
+            fontSize: '1.25rem',
+            fontWeight: 900,
+            fontFamily: 'monospace',
+            color: finished ? '#047857' : running ? '#1d4ed8' : '#0f172a',
+            background: '#ffffff',
+            padding: '0.2rem 0.55rem',
+            borderRadius: '8px',
+            border: '1px solid #cbd5e1'
+          }}>
+            ⏱️ {formatMMSS(secondsLeft)}
+          </span>
+
+          <div>
+            <div style={{ fontSize: '0.73rem', fontWeight: 800, color: finished ? '#047857' : '#334155' }}>
+              {finished
+                ? '🎉 ¡Tiempo completado!'
+                : running
+                ? '🔥 ¡Aguanta, tú puedes!'
+                : 'Cronómetro del ejercicio'}
+            </div>
+            {sets > 1 && (
+              <div style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 700 }}>
+                Serie {currentSet} de {sets}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+          {/* Ajustar tiempo rápido */}
+          {!running && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = Math.max(5, baseSeconds - step);
+                  setBaseSeconds(next);
+                  setSecondsLeft(next);
+                  setFinished(false);
+                }}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '0.28rem 0.45rem',
+                  fontSize: '0.68rem',
+                  fontWeight: 800,
+                  color: '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                -{stepLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = baseSeconds + step;
+                  setBaseSeconds(next);
+                  setSecondsLeft(next);
+                  setFinished(false);
+                }}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '0.28rem 0.45rem',
+                  fontSize: '0.68rem',
+                  fontWeight: 800,
+                  color: '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                +{stepLabel}
+              </button>
+            </>
+          )}
+
+          {/* Botón Empezar / Pausar / Siguiente serie */}
+          {finished && sets > 1 && currentSet < sets ? (
+            <button
+              type="button"
+              onClick={() => {
+                setCurrentSet(currentSet + 1);
+                setSecondsLeft(baseSeconds);
+                setFinished(false);
+                setRunning(true);
+              }}
+              style={{
+                background: '#2563eb',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '9px',
+                padding: '0.38rem 0.75rem',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+            >
+              ▶️ Empezar Serie {currentSet + 1}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (finished || secondsLeft === 0) {
+                  setSecondsLeft(baseSeconds);
+                  setFinished(false);
+                  setRunning(true);
+                } else {
+                  setRunning(!running);
+                }
+              }}
+              style={{
+                background: running ? '#f59e0b' : '#059669',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '9px',
+                padding: '0.38rem 0.75rem',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.08)'
+              }}
+            >
+              {running ? '⏸️ Pausar' : finished ? '🔄 Repetir' : '▶️ Empezar'}
+            </button>
+          )}
+
+          {(running || secondsLeft !== baseSeconds) && (
+            <button
+              type="button"
+              onClick={() => {
+                setRunning(false);
+                setFinished(false);
+                setSecondsLeft(baseSeconds);
+              }}
+              style={{
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#475569',
+                borderRadius: '9px',
+                padding: '0.36rem 0.55rem',
+                fontSize: '0.73rem',
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+              title="Reiniciar cronómetro"
+            >
+              🔄
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Barra de progreso visual mientras corre */}
+      {(running || finished) && (
+        <div style={{ marginTop: '0.45rem', height: '6px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden' }}>
+          <div style={{
+            width: `${pct}%`,
+            height: '100%',
+            background: finished ? '#10b981' : '#3b82f6',
+            transition: 'width 0.4s linear'
+          }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GymApp({ onBackToCasita }) {
   const [unlockedUser, setUnlockedUser] = useState(() => {
     const saved = localStorage.getItem('marbella_fit_unlocked_user');
@@ -1279,6 +1546,19 @@ function GymApp({ onBackToCasita }) {
                     </div>
                   </div>
 
+                  {/* CRONÓMETRO INTEGRADO EN LA FICHA SI EL EJERCICIO ES POR TIEMPO (Plancha, Cinta, Elíptica...) */}
+                  {parseExerciseDurationSeconds(ex.reps) && (
+                    <InlineExerciseTimer
+                      initialSeconds={parseExerciseDurationSeconds(ex.reps)}
+                      sets={ex.sets || 1}
+                      onComplete={() => {
+                        const copy = [...todayExercises];
+                        copy[idx].completed = true;
+                        setTodayExercises(copy);
+                      }}
+                    />
+                  )}
+
                   {/* DECISIÓN AL TERMINAR ESTA MÁQUINA CONCRETA (MEJORAR, MANTENER O BAJAR) */}
                   <div style={{
                     marginTop: '0.65rem',
@@ -1473,6 +1753,13 @@ function GymApp({ onBackToCasita }) {
                         <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '0.15rem' }}>
                           💡 {ex.tip}
                         </div>
+                        {parseExerciseDurationSeconds(`${targetVal} ${ex.unit}`) && (
+                          <InlineExerciseTimer
+                            initialSeconds={parseExerciseDurationSeconds(`${targetVal} ${ex.unit}`)}
+                            sets={1}
+                            onComplete={() => setHomeChecked((prev) => ({ ...prev, [idx]: true }))}
+                          />
+                        )}
                       </div>
 
                       <div style={{

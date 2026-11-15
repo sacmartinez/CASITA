@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ExerciseVisualModal from './components/ExerciseVisualModal';
 
 const GOAL_OPTIONS = [
   {
@@ -260,6 +261,7 @@ function GymApp({ onBackToCasita }) {
   // Estado de Pestaña 4: MÁQUINAS, OBJETIVO E HISTORIAL
   const [machineFilter, setMachineFilter] = useState('TODAS');
   const [quoteIdx, setQuoteIdx] = useState(() => new Date().getDate() % MOTIVATIONAL_QUOTES.length);
+  const [visualModalItem, setVisualModalItem] = useState(null);
 
   const nextQuote = () => {
     setQuoteIdx((prev) => (prev + 1) % MOTIVATIONAL_QUOTES.length);
@@ -268,7 +270,7 @@ function GymApp({ onBackToCasita }) {
   const todayDateStr = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
-    document.title = 'Marbella Fit · Tu Entrenador';
+    document.title = 'Marbella Fit · Adán Entrenador';
     let manifestLink = document.querySelector('link[rel="manifest"]');
     if (!manifestLink) {
       manifestLink = document.createElement('link');
@@ -322,13 +324,13 @@ function GymApp({ onBackToCasita }) {
   };
 
   // ============================================================================
-  // LÓGICA DE AUTO-PROGRESIÓN INTELIGENTE (LAS RUTINAS MEJORAN SOLAS)
+  // LÓGICA DE PROGRESIÓN POR CADA MÁQUINA CON TU ENTRENADOR ADÁN
   // ============================================================================
   const getSmartProgressionForExercise = (user, exTemplate) => {
     const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
     const targetName = norm(exTemplate.name);
 
-    // Buscar la última vez que este usuario hizo este ejercicio
+    // Buscar la última vez que este usuario hizo esta máquina
     for (const w of workouts) {
       if (w.user !== user) continue;
       for (const loggedEx of (w.exercises || [])) {
@@ -336,55 +338,92 @@ function GymApp({ onBackToCasita }) {
         if (norm(loggedEx.name) === targetName || (targetName && norm(loggedEx.name).includes(targetName.slice(0, 10)))) {
           const lastKg = Number(loggedEx.weightKg) || 0;
           const lastRepsNum = parseInt(String(loggedEx.reps), 10) || 12;
-          const wentWell = w.feeling !== '😅 Costó bastante';
+          // Decisión que elegiste en ESTA máquina concreta al terminar el último día ('mejorar' | 'mantener' | 'bajar')
+          const decision = loggedEx.nextAction || (w.feeling === '😅 Costó bastante' ? 'mantener' : 'mejorar');
 
           if (exTemplate.isCardio || lastKg === 0) {
+            if (decision === 'mejorar') {
+              return {
+                weightKg: 0,
+                reps: loggedEx.reps || exTemplate.baseReps,
+                badge: `🚀 Adán: Marcaste "Mejorar" la última vez (${loggedEx.reps || exTemplate.baseReps}) · ¡Hoy intenta sumar +2 min o +2 reps!`,
+                isUpgraded: true,
+                lastDecision: 'mejorar'
+              };
+            }
+            if (decision === 'bajar') {
+              return {
+                weightKg: 0,
+                reps: String(exTemplate.baseReps),
+                badge: `🌱 Adán: Marcaste "Suavizar" la última vez · Haz ${exTemplate.baseReps} a ritmo cómodo`,
+                isUpgraded: false,
+                lastDecision: 'bajar'
+              };
+            }
             return {
               weightKg: 0,
               reps: loggedEx.reps || exTemplate.baseReps,
-              badge: `⏮️ Última vez: ${loggedEx.reps || exTemplate.baseReps} · ¡Intenta superar 1-2 min o reps hoy!`,
-              isUpgraded: true
+              badge: `⚖️ Adán: Marcaste "Mantener" · Repetimos ${loggedEx.reps || exTemplate.baseReps}`,
+              isUpgraded: false,
+              lastDecision: 'mantener'
             };
           }
 
-          // Si el último entreno fue bien: si hizo < 15 reps, subimos +2 reps; si ya llegó a 15 reps (o cada sesión alterna), subimos el peso (+2.5kg o +5kg)!
-          if (wentWell) {
+          // 1. Si en esta máquina marcaste MEJORAR / SUBIR:
+          if (decision === 'mejorar') {
             if (lastRepsNum >= 14) {
               const nextKg = Number((lastKg + (exTemplate.stepKg || 2.5)).toFixed(1));
               return {
                 weightKg: nextKg,
                 reps: String(exTemplate.baseReps || 12),
-                badge: `📈 ¡Subimos nivel! Hoy toca ${nextKg} kg (hiciste ${lastKg} kg × ${lastRepsNum} el último día)`,
-                isUpgraded: true
+                badge: `🚀 Adán: Marcaste "Mejorar" en esta máquina → Subimos a ${nextKg} kg (hiciste ${lastKg} kg × ${lastRepsNum})`,
+                isUpgraded: true,
+                lastDecision: 'mejorar'
               };
             } else {
-              const nextReps = lastRepsNum + 1;
+              const nextReps = lastRepsNum + 2;
               return {
                 weightKg: lastKg,
                 reps: String(nextReps),
-                badge: `📈 Reto de hoy: ${lastKg} kg × ${nextReps} reps (+1 rep más que el último día)`,
-                isUpgraded: true
+                badge: `🚀 Adán: Marcaste "Mejorar" aquí → Hoy toca ${lastKg} kg × ${nextReps} reps (+2 reps más que el último día)`,
+                isUpgraded: true,
+                lastDecision: 'mejorar'
               };
             }
           }
 
+          // 2. Si en esta máquina marcaste BAJAR UN POCO:
+          if (decision === 'bajar') {
+            const lowerKg = Math.max(2.5, Number((lastKg - (exTemplate.stepKg || 2.5)).toFixed(1)));
+            return {
+              weightKg: lowerKg,
+              reps: String(exTemplate.baseReps || 12),
+              badge: `🌱 Adán: Marcaste "Bajar un poco" aquí → Bajamos a ${lowerKg} kg × ${exTemplate.baseReps || 12} reps para ir más cómodo`,
+              isUpgraded: false,
+              lastDecision: 'bajar'
+            };
+          }
+
+          // 3. Si en esta máquina marcaste MANTENER:
           return {
             weightKg: lastKg,
             reps: String(lastRepsNum),
-            badge: `🎯 Mantener y afianzar: ${lastKg} kg × ${lastRepsNum} reps`,
-            isUpgraded: false
+            badge: `⚖️ Adán: Marcaste "Mantener" en esta máquina → Repetimos ${lastKg} kg × ${lastRepsNum} reps`,
+            isUpgraded: false,
+            lastDecision: 'mantener'
           };
         }
       }
     }
 
-    // Si es la primera vez que lo hace: peso inicial recomendado para él/ella
+    // Si es la primera vez que lo hace: peso inicial recomendado por Adán para él/ella
     const startKg = exTemplate.baseKg?.[user] ?? 20;
     return {
       weightKg: startKg,
       reps: String(exTemplate.baseReps),
-      badge: startKg > 0 ? `🌱 Peso inicial recomendado: ${startKg} kg` : `🌱 Objetivo inicial: ${exTemplate.baseReps}`,
-      isUpgraded: false
+      badge: startKg > 0 ? `🧑‍🏫 Adán · Peso inicial recomendado: ${startKg} kg` : `🧑‍🏫 Adán · Objetivo inicial: ${exTemplate.baseReps}`,
+      isUpgraded: false,
+      lastDecision: 'mantener'
     };
   };
 
@@ -416,6 +455,7 @@ function GymApp({ onBackToCasita }) {
         badge: prog.badge,
         isUpgraded: prog.isUpgraded,
         isCardio: ex.isCardio,
+        nextAction: 'mantener', // Por defecto 'mantener', y al acabar cada máquina eliges 'mejorar' | 'mantener' | 'bajar'
         completed: true
       };
     });
@@ -452,7 +492,7 @@ function GymApp({ onBackToCasita }) {
         const data = await res.json();
         setWorkouts(data.workouts || []);
         setGymNotes('');
-        setGymSavedBanner('🎉 ¡Entreno guardado! Para el próximo día tu entrenador ya ha subido tus marcas.');
+        setGymSavedBanner('🎉 ¡Entreno guardado! Adán ya ha anotado qué máquinas subir, mantener o bajar para tu próximo día.');
         setTimeout(() => setGymSavedBanner(''), 6000);
       }
     } catch (e) {
@@ -737,7 +777,7 @@ function GymApp({ onBackToCasita }) {
         <div style={{ ...S.card, maxWidth: '400px', width: '100%', padding: '1.6rem', textAlign: 'center' }}>
           <div style={{ fontSize: '2.6rem', marginBottom: '0.3rem' }}>🏋️</div>
           <h1 style={{ margin: '0 0 0.25rem 0', fontSize: '1.35rem', fontWeight: 900, color: '#0f172a' }}>
-            Marbella Fit
+            Marbella Fit · Entrenador Adán
           </h1>
           <p style={{ margin: '0 0 1.2rem 0', fontSize: '0.82rem', color: '#64748b' }}>
             Elige tu perfil personal e introduce tu contraseña
@@ -850,7 +890,7 @@ function GymApp({ onBackToCasita }) {
                 {activeUser === 'Ismael' ? '👦 Gym de Ismael' : '👧 Gym de Sandra'}
               </div>
               <div style={{ fontSize: '0.68rem', color: '#059669', fontWeight: 700 }}>
-                {activeGoalObj.icon} {activeGoalObj.shortLabel}
+                🧑‍🏫 Entrenador Adán · {activeGoalObj.icon} {activeGoalObj.shortLabel}
               </div>
             </div>
           </div>
@@ -918,7 +958,7 @@ function GymApp({ onBackToCasita }) {
 
       <main style={S.container}>
 
-        {/* Tarjeta de Frase Motivadora antes de entrenar (Visible en Gym y En Casa) */}
+        {/* Tarjeta de Frase Motivadora de Adán antes de entrenar (Visible en Gym y En Casa) */}
         {(activeTab === 'gym' || activeTab === 'home') && (
           <div style={{
             ...S.card,
@@ -941,7 +981,7 @@ function GymApp({ onBackToCasita }) {
                 marginBottom: '0.2rem',
                 letterSpacing: '0.3px'
               }}>
-                💬 Tu dosis de motivación pre-entreno, {activeUser}
+                🧑‍🏫 Adán te dice hoy, {activeUser}:
               </div>
               <div style={{
                 fontSize: '0.86rem',
@@ -969,7 +1009,7 @@ function GymApp({ onBackToCasita }) {
                 whiteSpace: 'nowrap',
                 boxShadow: '0 2px 6px rgba(0,0,0,0.04)'
               }}
-              title="Ver otra frase motivadora"
+              title="Ver otra frase motivadora de Adán"
             >
               ✨ Otra frase
             </button>
@@ -977,7 +1017,7 @@ function GymApp({ onBackToCasita }) {
         )}
 
         {/* ====================================================================
-            PESTAÑA 1: 🏋️ HOY EN EL GYM (FÁCIL, RÁPIDO Y CON AUTO-PROGRESIÓN)
+            PESTAÑA 1: 🏋️ HOY EN EL GYM (FÁCIL, RÁPIDO Y PROGRESIÓN POR MÁQUINA)
            ==================================================================== */}
         {activeTab === 'gym' && (
           <>
@@ -985,7 +1025,7 @@ function GymApp({ onBackToCasita }) {
             <div style={S.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem', flexWrap: 'wrap', gap: '0.4rem' }}>
                 <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#059669', textTransform: 'uppercase' }}>
-                  📍 Al llegar al Gimnasio Marbella · ¿Qué toca hoy?
+                  📍 Al llegar al Gimnasio Marbella · Plan de Adán para hoy
                 </span>
                 {activeUser === 'Ismael' && !didHomeToday && (
                   <button
@@ -1104,8 +1144,31 @@ function GymApp({ onBackToCasita }) {
                         </span>
                         <strong style={{ fontSize: '0.96rem', color: '#0f172a' }}>{ex.name}</strong>
                       </div>
-                      <div style={{ fontSize: '0.74rem', color: '#2563eb', fontWeight: 700, marginTop: '0.2rem' }}>
-                        📍 {ex.machine} · <strong>{ex.sets} {ex.sets === 1 ? 'bloque' : 'series'}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', marginTop: '0.28rem' }}>
+                        <span style={{ fontSize: '0.74rem', color: '#2563eb', fontWeight: 700 }}>
+                          📍 {ex.machine} · <strong>{ex.sets} {ex.sets === 1 ? 'bloque' : 'series'}</strong>
+                        </span>
+
+                        {/* Botón para ver foto y animación del ejercicio/máquina */}
+                        <button
+                          type="button"
+                          onClick={() => setVisualModalItem({ name: ex.name, machine: ex.machine })}
+                          style={{
+                            background: '#eff6ff',
+                            border: '1px solid #93c5fd',
+                            color: '#1d4ed8',
+                            borderRadius: '999px',
+                            padding: '0.18rem 0.6rem',
+                            fontSize: '0.7rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}
+                        >
+                          📸 Ver máquina / Ejercicio
+                        </button>
                       </div>
                     </div>
 
@@ -1132,7 +1195,7 @@ function GymApp({ onBackToCasita }) {
                     </button>
                   </div>
 
-                  {/* Etiqueta de Auto-Progresión del Entrenador */}
+                  {/* Etiqueta de Auto-Progresión del Entrenador Adán */}
                   <div style={{
                     marginTop: '0.5rem',
                     padding: '0.4rem 0.6rem',
@@ -1215,38 +1278,57 @@ function GymApp({ onBackToCasita }) {
                       />
                     </div>
                   </div>
+
+                  {/* DECISIÓN AL TERMINAR ESTA MÁQUINA CONCRETA (MEJORAR, MANTENER O BAJAR) */}
+                  <div style={{
+                    marginTop: '0.65rem',
+                    paddingTop: '0.6rem',
+                    borderTop: '1px dashed #e2e8f0'
+                  }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#475569', marginBottom: '0.35rem' }}>
+                      🧑‍🏫 Al acabar esta máquina, ¿qué hace Adán el próximo día aquí?
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.35rem' }}>
+                      {[
+                        { id: 'mejorar', label: '🚀 Mejorar', sub: 'Subir peso/reps', activeBorder: '#059669', activeBg: '#ecfdf5', activeColor: '#047857' },
+                        { id: 'mantener', label: '⚖️ Mantener', sub: 'Seguir igual', activeBorder: '#2563eb', activeBg: '#eff6ff', activeColor: '#1d4ed8' },
+                        { id: 'bajar', label: '🌱 Bajar', sub: 'Costó mucho', activeBorder: '#d97706', activeBg: '#fffbeb', activeColor: '#b45309' }
+                      ].map(opt => {
+                        const isSel = (ex.nextAction || 'mantener') === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => {
+                              const copy = [...todayExercises];
+                              copy[idx].nextAction = opt.id;
+                              copy[idx].completed = true;
+                              setTodayExercises(copy);
+                            }}
+                            style={{
+                              padding: '0.4rem 0.25rem',
+                              borderRadius: '10px',
+                              border: isSel ? `2px solid ${opt.activeBorder}` : '1px solid #e2e8f0',
+                              background: isSel ? opt.activeBg : '#f8fafc',
+                              color: isSel ? opt.activeColor : '#475569',
+                              cursor: 'pointer',
+                              textAlign: 'center'
+                            }}
+                          >
+                            <div style={{ fontSize: '0.74rem', fontWeight: 800 }}>{opt.label}</div>
+                            <div style={{ fontSize: '0.64rem', opacity: 0.85 }}>{opt.sub}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               ))}
 
-              {/* Cómo te has sentido hoy + Botón Guardar */}
+              {/* Resumen y Botón Guardar Entreno de Hoy */}
               <div style={S.card}>
-                <label style={{ fontSize: '0.78rem', fontWeight: 800, color: '#334155', display: 'block', marginBottom: '0.45rem' }}>
-                  ¿Cómo te has sentido en el entreno de hoy? (Sirve para subir o mantener el peso el próximo día)
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem', marginBottom: '0.7rem' }}>
-                  {[
-                    { val: '🔥 A tope', label: '🔥 Sobrado (Subir peso)' },
-                    { val: '💪 Muy bien', label: '💪 Bien (Progresar)' },
-                    { val: '😅 Costó bastante', label: '😅 Justo (Mantener)' }
-                  ].map(opt => (
-                    <button
-                      key={opt.val}
-                      type="button"
-                      onClick={() => setFeeling(opt.val)}
-                      style={{
-                        padding: '0.5rem 0.3rem',
-                        borderRadius: '10px',
-                        border: feeling === opt.val ? '2px solid #059669' : '1px solid #cbd5e1',
-                        background: feeling === opt.val ? '#ecfdf5' : '#f8fafc',
-                        color: '#0f172a',
-                        fontSize: '0.73rem',
-                        fontWeight: 700,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                <div style={{ fontSize: '0.76rem', color: '#475569', marginBottom: '0.65rem', textAlign: 'center' }}>
+                  🧑‍🏫 <strong>Adán</strong> guardará la decisión individual de cada máquina (<strong>🚀 Mejorar</strong>, <strong>⚖️ Mantener</strong> o <strong>🌱 Bajar</strong>) para prepararte tu próxima sesión a medida.
                 </div>
 
                 {gymSavedBanner && (
@@ -1266,7 +1348,7 @@ function GymApp({ onBackToCasita }) {
                 )}
 
                 <button type="submit" disabled={savingGym} style={{ ...S.btnGreen, width: '100%', fontSize: '0.98rem', padding: '0.9rem' }}>
-                  {savingGym ? 'Guardando...' : `✅ Terminar y Guardar ${currentGymDay.shortTab}`}
+                  {savingGym ? 'Guardando con Adán...' : `✅ Terminar y Guardar ${currentGymDay.shortTab}`}
                 </button>
               </div>
             </form>
@@ -1299,7 +1381,7 @@ function GymApp({ onBackToCasita }) {
                     {didHomeToday ? '✅ ¡Reto en casa cumplido hoy!' : '⏰ ¡Oblígate 5 minutos hoy en el salón o despacho!'}
                   </span>
                   <h2 style={{ margin: '0.4rem 0 0.15rem 0', fontSize: '1.15rem', color: '#0f172a' }}>
-                    🏠 Ejercicios Rápidos en Casa ({activeUser})
+                    🏠 Ejercicios Rápidos en Casa con Adán ({activeUser})
                   </h2>
                   <p style={{ margin: 0, fontSize: '0.8rem', color: '#475569' }}>
                     Tus repeticiones suben solas cada 4 sesiones completadas · <strong>Nivel actual en casa: Nivel {homeLevel}</strong> ({userHomeWorkouts.length} sesiones hechas).
@@ -1359,9 +1441,30 @@ function GymApp({ onBackToCasita }) {
                         cursor: 'pointer'
                       }}
                     >
-                      <div>
-                        <div style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a', textDecoration: isDone ? 'line-through' : 'none' }}>
-                          {idx + 1}. {ex.name}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a', textDecoration: isDone ? 'line-through' : 'none' }}>
+                            {idx + 1}. {ex.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setVisualModalItem({ name: ex.name, machine: 'En Casa' });
+                            }}
+                            style={{
+                              background: '#eff6ff',
+                              border: '1px solid #93c5fd',
+                              color: '#1d4ed8',
+                              borderRadius: '999px',
+                              padding: '0.15rem 0.55rem',
+                              fontSize: '0.68rem',
+                              fontWeight: 800,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            📸 Ver ejercicio
+                          </button>
                         </div>
                         <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#059669', marginTop: '0.15rem' }}>
                           🎯 Objetivo hoy: {targetVal} {ex.unit}
@@ -1421,7 +1524,7 @@ function GymApp({ onBackToCasita }) {
         )}
 
         {/* ====================================================================
-            PESTAÑA 3: 🍎 COMIDA Y PESO (CUÉNTASELO AL ENTRENADOR + BÁSCULA)
+            PESTAÑA 3: 🍎 COMIDA Y PESO (CUÉNTASELO A ADÁN + BÁSCULA)
            ==================================================================== */}
         {activeTab === 'nutrition' && (
           <>
@@ -1529,15 +1632,15 @@ function GymApp({ onBackToCasita }) {
               )}
             </div>
 
-            {/* BLOQUE 2: CUÉNTALE QUÉ HAS COMIDO A TU ENTRENADOR */}
+            {/* BLOQUE 2: CUÉNTALE QUÉ HAS COMIDO A ADÁN */}
             <div style={S.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.65rem' }}>
                 <div>
                   <h2 style={{ margin: 0, fontSize: '1.08rem', color: '#0f172a' }}>
-                    🍎 Cuéntame qué has comido hoy ({activeUser})
+                    🍎 Cuéntale a Adán qué has comido hoy ({activeUser})
                   </h2>
                   <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.76rem', color: '#64748b' }}>
-                    Escríbelo normal y tu entrenador calculará las calorías y te dirá cómo vas hoy.
+                    Escríbelo normal y Adán calculará las calorías y te dirá cómo vas hoy.
                   </p>
                 </div>
 
@@ -1609,15 +1712,15 @@ function GymApp({ onBackToCasita }) {
                     required
                   />
                   <button type="submit" disabled={analyzingMeal} style={S.btnGreen}>
-                    {analyzingMeal ? 'Analizando...' : '🤖 Contárselo al Entrenador'}
+                    {analyzingMeal ? 'Analizando...' : '🧑‍🏫 Contárselo a Adán'}
                   </button>
                 </div>
               </form>
 
-              {/* Lista de comidas registradas con el consejo del entrenador */}
+              {/* Lista de comidas registradas con el consejo de Adán */}
               {meals.filter(m => m.user === activeUser).length === 0 ? (
                 <p style={{ fontSize: '0.8rem', color: '#64748b', textAlign: 'center', margin: '0.5rem 0' }}>
-                  Aún no me has contado qué has comido hoy. ¡Apunta tu desayuno o comida arriba y te digo cómo vas!
+                  Aún no le has contado a Adán qué has comido hoy. ¡Apunta tu desayuno o comida arriba y te dice cómo vas!
                 </p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
@@ -1660,7 +1763,7 @@ function GymApp({ onBackToCasita }) {
                         </div>
                       </div>
                       <div style={{ marginTop: '0.4rem', fontSize: '0.76rem', color: '#047857', background: '#ecfdf5', padding: '0.45rem 0.65rem', borderRadius: '8px' }}>
-                        <strong>{m.score}:</strong> {m.coachFeedback}
+                        <strong>🧑‍🏫 Adán ({m.score}):</strong> {m.coachFeedback}
                       </div>
                     </div>
                   ))}
@@ -1678,7 +1781,7 @@ function GymApp({ onBackToCasita }) {
             {/* Selector de Objetivo de cada uno */}
             <div style={S.card}>
               <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: '#0f172a' }}>
-                🎯 ¿Cuál es el objetivo principal de {activeUser}?
+                🎯 ¿Cuál es el objetivo principal de {activeUser} con Adán?
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem' }}>
                 {GOAL_OPTIONS.map(g => {
@@ -1742,13 +1845,32 @@ function GymApp({ onBackToCasita }) {
                 {MARBELLA_MACHINES
                   .filter(m => machineFilter === 'TODAS' || m.zone === machineFilter)
                   .map(m => (
-                    <div key={m.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '0.8rem' }}>
-                      <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#0f172a' }}>{m.icon} {m.name}</div>
-                      <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 700, marginTop: '0.15rem' }}>🎯 {m.muscles}</div>
-                      <div style={{ fontSize: '0.74rem', color: '#334155', marginTop: '0.35rem' }}>
-                        <strong>⚙️ Ajuste:</strong> {m.setup}<br />
-                        <strong>🎓 Cómo hacerla:</strong> {m.technique}
+                    <div key={m.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '0.8rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '0.5rem' }}>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#0f172a' }}>{m.icon} {m.name}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 700, marginTop: '0.15rem' }}>🎯 {m.muscles}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#334155', marginTop: '0.35rem' }}>
+                          <strong>⚙️ Ajuste:</strong> {m.setup}<br />
+                          <strong>🎓 Cómo hacerla:</strong> {m.technique}
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setVisualModalItem({ name: m.id, machine: m.name })}
+                        style={{
+                          background: '#eff6ff',
+                          border: '1px solid #93c5fd',
+                          color: '#1d4ed8',
+                          borderRadius: '10px',
+                          padding: '0.45rem 0.7rem',
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          width: '100%'
+                        }}
+                      >
+                        📸 Ver foto y movimiento de la máquina
+                      </button>
                     </div>
                   ))}
               </div>
@@ -1761,7 +1883,7 @@ function GymApp({ onBackToCasita }) {
               </h3>
               {workouts.filter(w => w.user === activeUser).length === 0 ? (
                 <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>
-                  Aquí irán apareciendo todos tus entrenos completados, {activeUser}.
+                  Aquí irán apareciendo todos tus entrenos completados con Adán, {activeUser}.
                 </p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
@@ -1772,7 +1894,7 @@ function GymApp({ onBackToCasita }) {
                           {w.routineName}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                          📅 {w.date} · ⏱️ {w.durationMin} min · 🔥 ~{w.caloriesBurned} kcal · {w.feeling}
+                          📅 {w.date} · ⏱️ {w.durationMin} min · 🔥 ~{w.caloriesBurned} kcal
                         </div>
                       </div>
                       <button
@@ -1798,6 +1920,15 @@ function GymApp({ onBackToCasita }) {
         )}
 
       </main>
+
+      {/* MODAL VISUAL DE MÁQUINA Y ANIMACIÓN DEL EJERCICIO */}
+      {visualModalItem && (
+        <ExerciseVisualModal
+          exerciseKeyOrName={visualModalItem.name}
+          machineName={visualModalItem.machine}
+          onClose={() => setVisualModalItem(null)}
+        />
+      )}
 
       {/* BARRA INFERIOR ADAPTADA AL PERFIL (4 pestañas para Ismael con En Casa, 3 para Sandra solo Gym) */}
       <nav

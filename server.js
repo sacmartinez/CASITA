@@ -1372,6 +1372,96 @@ app.post('/api/gym/water', (req, res) => {
   }
 });
 
+app.post('/api/gym/inprogress', (req, res) => {
+  try {
+    const { user, date, stateObj } = req.body;
+    const inProgress = db.saveGymInProgress(
+      user || 'Ismael',
+      date || new Date().toISOString().split('T')[0],
+      stateObj || {}
+    );
+    res.json({ inProgress });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al autoguardar progreso del día' });
+  }
+});
+
+app.post('/api/gym/analyze-cardio-screen', async (req, res) => {
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'Imagen requerida' });
+    }
+    const apiKey = db.getGeminiKey();
+    if (!apiKey) {
+      return res.status(400).json({ error: 'Falta la clave de Gemini en el servidor' });
+    }
+
+    const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    const mimeType = match ? match[1] : 'image/jpeg';
+    const rawBase64 = match ? match[2] : imageBase64.replace(/^data:image\/\w+;base64,/, '');
+
+    const promptText = `Analiza esta foto de la pantalla de una máquina de cardio de gimnasio (cinta, elíptica o bicicleta).
+Extrae los valores que aparecen en pantalla (por ejemplo TOTAL RUNNING TIME, RUNNING DISTANCE Km, TOTAL CALORIES, AVG RPM, AVG PULSE, MAXIMUM LEVEL).
+Devuelve EXCLUSIVAMENTE un JSON válido con esta estructura:
+{
+  "timeStr": "20:43 min",
+  "distanceKm": 3.28,
+  "caloriesKcal": 115.2,
+  "avgRpm": 40,
+  "avgPulse": 107,
+  "levelMax": 6
+}
+Si algún dato no aparece en pantalla, pon null en ese campo.`;
+
+    const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+    for (const model of models) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 16000);
+        const bodyPayload = {
+          contents: [{
+            parts: [
+              { text: promptText },
+              { inline_data: { mime_type: mimeType, data: rawBase64 } }
+            ]
+          }],
+          generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
+        };
+        if (model.startsWith('gemini-2.5')) {
+          bodyPayload.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+        }
+        const resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyPayload),
+            signal: controller.signal
+          }
+        );
+        clearTimeout(timer);
+        if (resp.ok) {
+          const data = await resp.json();
+          const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const fb = cleaned.indexOf('{');
+          const lb = cleaned.lastIndexOf('}');
+          if (fb !== -1 && lb !== -1) {
+            const parsed = JSON.parse(cleaned.slice(fb, lb + 1));
+            return res.json({ cardioData: parsed, model });
+          }
+        }
+      } catch (_) {}
+    }
+
+    res.status(500).json({ error: 'No se pudo leer la pantalla de cardio con IA. Puedes introducir los datos manualmente.' });
+  } catch (error) {
+    console.error('[Cardio Screen OCR Error]', error);
+    res.status(500).json({ error: 'Error al analizar la pantalla de cardio' });
+  }
+});
+
 app.post('/api/gym/meals', async (req, res) => {
   try {
     const { user, date, mealType, text } = req.body;

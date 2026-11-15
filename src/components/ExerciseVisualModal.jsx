@@ -252,6 +252,38 @@ export const EXERCISE_VISUAL_CATALOG = {
     adanTip: 'Al bajar, extiende los brazos hacia delante para mantener el equilibrio y la espalda bien erguida.',
     photoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Squats.svg/512px-Squats.svg.png',
     animType: 'prensa'
+  },
+  'crunch-polea-abdomen': {
+    id: 'crunch-polea-abdomen',
+    title: 'Crunch Abdominal con Peso en Polea Alta / Máquina (Six-Pack)',
+    zone: 'Estación de Poleas / Máquina de Abdomen',
+    muscles: 'Recto abdominal superior y medio (Tableta de chocolate con volumen)',
+    howToSpot: 'Engancha la cuerda doble en una polea alta y ponte de rodillas en una esterilla, o usa la máquina sentada de abdominales.',
+    setup: 'En polea: sujeta los extremos de la cuerda a los lados de la cabeza/frente estando de rodillas.',
+    steps: [
+      'Sin mover la cadera hacia atrás, encoge el tronco llevando las costillas hacia la pelvis y los codos hacia las rodillas.',
+      'Suelta todo el aire abajo del todo y aprieta fuerte los abdominales durante 1 segundo.',
+      'Sube despacio estirando el abdomen sin perder la tensión.'
+    ],
+    adanTip: 'Para que salgan los cuadritos ("tableta"), el abdomen se entrena con peso como cualquier otro músculo: encoge la tripa como una persiana, no bajes con la espalda tiesa.',
+    photoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f8/Plank_exercise.jpg/640px-Plank_exercise.jpg',
+    animType: 'jalon'
+  },
+  'elevacion-piernas-abdomen': {
+    id: 'elevacion-piernas-abdomen',
+    title: 'Elevación de Piernas / Rodillas al Pecho (Abdomen Inferior)',
+    zone: 'Silla Romana (Fondos/Abdomen) o Colchoneta',
+    muscles: 'Abdomen inferior (zona baja de la tripa) y Oblicuos',
+    howToSpot: 'Busca la estructura vertical con dos apoyos para los antebrazos y respaldo (Silla Romana), o hazlo tumbado en colchoneta.',
+    setup: 'Apoya bien los antebrazos y pega la espalda contra el respaldo con los hombros firmes.',
+    steps: [
+      'Sube las rodillas hacia el pecho enrollando un poco la pelvis hacia arriba al final.',
+      'Aguanta 1 segundo arriba apretando la parte baja del abdomen.',
+      'Baja las piernas despacio en 2 segundos sin balancearte.'
+    ],
+    adanTip: 'El truco para atacar la grasa/flacidez de la parte baja del abdomen es levantar un pelín el culo del respaldo al subir las rodillas.',
+    photoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f8/Plank_exercise.jpg/640px-Plank_exercise.jpg',
+    animType: 'cuadriceps'
   }
 };
 
@@ -259,6 +291,8 @@ export const EXERCISE_VISUAL_CATALOG = {
 export function resolveExerciseVisual(exNameOrId = '', machineName = '') {
   if (EXERCISE_VISUAL_CATALOG[exNameOrId]) return EXERCISE_VISUAL_CATALOG[exNameOrId];
   const s = `${exNameOrId} ${machineName}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (s.includes('crunch') && (s.includes('polea') || s.includes('peso') || s.includes('maquina'))) return EXERCISE_VISUAL_CATALOG['crunch-polea-abdomen'];
+  if (s.includes('elevacion de piernas') || s.includes('rodillas al pecho') || s.includes('abdomen inferior')) return EXERCISE_VISUAL_CATALOG['elevacion-piernas-abdomen'];
   if (s.includes('prensa')) return EXERCISE_VISUAL_CATALOG['prensa'];
   if (s.includes('jalon') || s.includes('polea alta')) return EXERCISE_VISUAL_CATALOG['jalon-pecho'];
   if (s.includes('press de pecho') || s.includes('maquina de pecho')) return EXERCISE_VISUAL_CATALOG['press-pecho'];
@@ -268,13 +302,13 @@ export function resolveExerciseVisual(exNameOrId = '', machineName = '') {
   if (s.includes('remo') && !s.includes('trx')) return EXERCISE_VISUAL_CATALOG['remo-polea'];
   if (s.includes('contractora') || s.includes('mariposa') || s.includes('pec deck')) return EXERCISE_VISUAL_CATALOG['contractora'];
   if (s.includes('hombro')) return EXERCISE_VISUAL_CATALOG['press-hombro'];
-  if (s.includes('triceps') || s.includes('biceps') || s.includes('poleas')) return EXERCISE_VISUAL_CATALOG['polea-triceps-biceps'];
+  if (s.includes('triceps') || s.includes('biceps') || s.includes('martillo') || s.includes('poleas')) return EXERCISE_VISUAL_CATALOG['polea-triceps-biceps'];
   if (s.includes('trx')) return EXERCISE_VISUAL_CATALOG['trx-funcional'];
   if (s.includes('eliptica') || s.includes('bici') || s.includes('spinning') || s.includes('clase')) return EXERCISE_VISUAL_CATALOG['eliptica'];
   if (s.includes('cinta') || s.includes('caminata')) return EXERCISE_VISUAL_CATALOG['cinta'];
   if (s.includes('flexion')) return EXERCISE_VISUAL_CATALOG['flexiones-casa'];
   if (s.includes('sentadilla') || s.includes('zancada')) return EXERCISE_VISUAL_CATALOG['sentadillas-casa'];
-  if (s.includes('plancha') || s.includes('puente') || s.includes('abdominal') || s.includes('colchoneta')) return EXERCISE_VISUAL_CATALOG['colchoneta-abdomen'];
+  if (s.includes('plancha') || s.includes('puente') || s.includes('abdominal') || s.includes('colchoneta') || s.includes('oblicuos') || s.includes('tableta')) return EXERCISE_VISUAL_CATALOG['colchoneta-abdomen'];
   return EXERCISE_VISUAL_CATALOG['prensa'];
 }
 

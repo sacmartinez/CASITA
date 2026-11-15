@@ -992,7 +992,15 @@ export const db = {
   // --- GIMNASIO MARBELLA & PERSONAL TRAINER ---
   getGymData: () => {
     const data = readDB();
-    const defaultProfile = {
+    const defaultIsmael = {
+      goalType: 'brazos_abs_grasa',
+      goalLabel: '🔥💪🍫 Perder Grasa + Brazos y Tableta de Chocolate',
+      customFocus: 'Perder peso, muscular brazos (bíceps/tríceps/hombros) y marcar tableta de abdominales con entreno duro',
+      level: 'Duro / Progresivo',
+      targetDaysPerWeek: 4,
+      targetWeightKg: null
+    };
+    const defaultSandra = {
       goalType: 'tonificar',
       goalLabel: '⚡ Tonificar y Ponerse en Forma',
       customFocus: '',
@@ -1006,12 +1014,32 @@ export const db = {
       bodyWeights: data.gymBodyWeights || [],
       meals: data.gymMeals || [],
       waterLogs: data.gymWaterLogs || {},
+      inProgress: data.gymInProgress || {},
       goals: {
-        Ismael: { ...defaultProfile, ...(goals.Ismael || {}) },
-        Sandra: { ...defaultProfile, ...(goals.Sandra || {}) }
+        Ismael: { ...defaultIsmael, ...(goals.Ismael || {}), goalType: (goals.Ismael && goals.Ismael.goalType) || 'brazos_abs_grasa', goalLabel: (goals.Ismael && goals.Ismael.goalLabel) || defaultIsmael.goalLabel },
+        Sandra: { ...defaultSandra, ...(goals.Sandra || {}) }
       },
       customRoutines: data.gymCustomRoutines || []
     };
+  },
+  saveGymInProgress: (user, date, stateObj) => {
+    const data = readDB();
+    if (!data.gymInProgress) data.gymInProgress = {};
+    const key = `${user}_${date}`;
+    data.gymInProgress[key] = {
+      ...(stateObj || {}),
+      updatedAt: new Date().toISOString()
+    };
+    writeDB(data);
+    return data.gymInProgress;
+  },
+  clearGymInProgress: (user, date) => {
+    const data = readDB();
+    if (!data.gymInProgress) data.gymInProgress = {};
+    const key = `${user}_${date}`;
+    delete data.gymInProgress[key];
+    writeDB(data);
+    return data.gymInProgress;
   },
   addGymWorkout: (workout) => {
     const data = readDB();
@@ -1029,6 +1057,13 @@ export const db = {
         reps: String(ex.reps || '12'),
         weightKg: ex.weightKg !== undefined && ex.weightKg !== '' ? Number(ex.weightKg) : 0,
         durationMin: ex.durationMin !== undefined && ex.durationMin !== '' ? Number(ex.durationMin) : 0,
+        isCardio: !!ex.isCardio,
+        nextAction: ex.nextAction || 'mantener',
+        distanceKm: ex.distanceKm !== undefined && ex.distanceKm !== '' && ex.distanceKm !== null ? Number(ex.distanceKm) : null,
+        caloriesKcal: ex.caloriesKcal !== undefined && ex.caloriesKcal !== '' && ex.caloriesKcal !== null ? Number(ex.caloriesKcal) : null,
+        levelMax: ex.levelMax !== undefined && ex.levelMax !== '' && ex.levelMax !== null ? Number(ex.levelMax) : null,
+        avgPulse: ex.avgPulse !== undefined && ex.avgPulse !== '' && ex.avgPulse !== null ? Number(ex.avgPulse) : null,
+        avgRpm: ex.avgRpm !== undefined && ex.avgRpm !== '' && ex.avgRpm !== null ? Number(ex.avgRpm) : null,
         completed: ex.completed !== false,
         setDetails
       };
@@ -1050,12 +1085,21 @@ export const db = {
       return sum + (setsNum * repsNum * weightNum);
     }, 0);
 
+    const workoutDate = workout.date || new Date().toISOString().split('T')[0];
+    const workoutUser = workout.user || 'Ismael';
+    const workoutType = workout.type || 'gym';
+
+    // Si ya había un entrenamiento de gimnasio hoy para este usuario y se vuelve a guardar/actualizar, reemplazarlo para no duplicar el día
+    if (workoutType === 'gym') {
+      data.gymWorkouts = data.gymWorkouts.filter(w => !(w.user === workoutUser && w.type !== 'home' && w.date === workoutDate));
+    }
+
     const newWorkout = {
       id: Date.now().toString() + '-' + Math.floor(Math.random() * 10000),
-      user: workout.user || 'Ismael',
-      type: workout.type || 'gym', // 'gym' | 'home'
+      user: workoutUser,
+      type: workoutType, // 'gym' | 'home'
       routineId: workout.routineId || null,
-      date: workout.date || new Date().toISOString().split('T')[0],
+      date: workoutDate,
       routineName: (workout.routineName || 'Entrenamiento en Gimnasio Marbella').trim(),
       category: workout.category || 'General',
       durationMin: Number(workout.durationMin) || 45,
@@ -1067,6 +1111,12 @@ export const db = {
       createdAt: new Date().toISOString()
     };
     data.gymWorkouts.unshift(newWorkout);
+
+    // Limpiar el borrador en curso de hoy si es de gimnasio
+    if (workoutType === 'gym' && data.gymInProgress) {
+      delete data.gymInProgress[`${workoutUser}_${workoutDate}`];
+    }
+
     writeDB(data);
     return data.gymWorkouts;
   },

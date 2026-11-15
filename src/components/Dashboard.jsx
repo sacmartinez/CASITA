@@ -360,20 +360,20 @@ function Dashboard({ currentUser, onNavigate }) {
           <span className="dash-card-arrow">›</span>
         </button>
 
-        {/* Card Gimnasio Marbella & Personal Trainer */}
+        {/* Card App Independiente: Marbella Fit */}
         <button
           className="dash-card dash-card--gym"
           onClick={() => onNavigate('gym')}
-          style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.08) 100%)' }}
+          style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.14) 0%, rgba(5, 150, 105, 0.08) 100%)' }}
         >
           <div className="dash-card-icon">🏋️</div>
           <div className="dash-card-content">
-            <h3 className="dash-card-title">Gimnasio Marbella</h3>
+            <h3 className="dash-card-title">App: Marbella Fit ↗</h3>
             <p className="dash-card-count" style={{ fontSize: '0.98rem', color: '#34d399', fontWeight: '700' }}>
               {(gymData.workouts || []).length} entreno{(gymData.workouts || []).length !== 1 ? 's' : ''} registrado{(gymData.workouts || []).length !== 1 ? 's' : ''}
             </p>
             <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.3rem', display: 'block' }}>
-              Personal Trainer · Rutinas, máquinas y peso
+              Abrir vuestra App de Gimnasio y Personal Trainer
             </span>
           </div>
           <span className="dash-card-arrow">›</span>

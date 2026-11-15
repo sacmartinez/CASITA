@@ -15,10 +15,15 @@ import MaintenanceLog from './components/MaintenanceLog';
 import StatsDashboard from './components/StatsDashboard';
 import WarrantiesManager from './components/WarrantiesManager';
 import BirthdayManager from './components/BirthdayManager';
-import GymManager from './components/GymManager';
+import GymApp from './GymApp';
 
 
 function App() {
+  const [isGymApp, setIsGymApp] = useState(() => {
+    const p = window.location.pathname.toLowerCase();
+    const q = new URLSearchParams(window.location.search).get('app');
+    return p.startsWith('/gym') || q === 'gym';
+  });
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('hogar_user');
     return (saved === 'Ismael' || saved === 'Sandra') ? saved : 'Ismael';
@@ -85,6 +90,33 @@ function App() {
     return activeTab === tab;
   };
 
+  useEffect(() => {
+    const handlePopState = () => {
+      const p = window.location.pathname.toLowerCase();
+      const q = new URLSearchParams(window.location.search).get('app');
+      setIsGymApp(p.startsWith('/gym') || q === 'gym');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const openStandaloneGymApp = () => {
+    window.history.pushState({}, 'Marbella Fit', '/gym');
+    setIsGymApp(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const closeStandaloneGymApp = () => {
+    window.history.pushState({}, 'Casita Hub', '/');
+    document.title = 'Casita Hub';
+    setIsGymApp(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  if (isGymApp) {
+    return <GymApp onBackToCasita={closeStandaloneGymApp} />;
+  }
+
   return (
     <div className="app-container">
       {/* Cabecera Principal */}
@@ -94,6 +126,14 @@ function App() {
           <p>El espacio compartido de Ismael &amp; Sandra</p>
         </div>
         <div className="header-actions">
+          <button 
+            className="header-tool-btn" 
+            onClick={openStandaloneGymApp} 
+            title="Abrir App Marbella Fit (Gimnasio)"
+            aria-label="Abrir App Marbella Fit"
+          >
+            🏋️
+          </button>
           <button 
             className="header-tool-btn" 
             onClick={() => setShowTicketModal(true)} 
@@ -113,6 +153,10 @@ function App() {
           <Dashboard 
             currentUser={currentUser} 
             onNavigate={(tab, subTab) => {
+              if (tab === 'gym') {
+                openStandaloneGymApp();
+                return;
+              }
               setActiveTab(tab);
               if (tab === 'planning' && subTab) {
                 setPlanningSubTab(subTab);
@@ -130,13 +174,6 @@ function App() {
       {activeTab === 'warranties' && (
         <div style={{ padding: '0 1rem 1.5rem 1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
           <WarrantiesManager currentUser={currentUser} />
-        </div>
-      )}
-
-      {/* Gimnasio Marbella & Personal Trainer */}
-      {activeTab === 'gym' && (
-        <div style={{ padding: '0 1rem 1.5rem 1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
-          <GymManager currentUser={currentUser} />
         </div>
       )}
 
@@ -314,15 +351,6 @@ function App() {
         >
           <span className="mobile-nav-icon">🐹</span>
           <span>Cuidados</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('gym')}
-          className={`mobile-nav-btn ${activeTab === 'gym' ? 'active' : ''}`}
-          aria-label="Ver gimnasio y personal trainer"
-        >
-          <span className="mobile-nav-icon">🏋️</span>
-          <span>Gym</span>
         </button>
       </nav>
 

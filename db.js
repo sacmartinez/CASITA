@@ -992,12 +992,21 @@ export const db = {
   // --- GIMNASIO MARBELLA & PERSONAL TRAINER ---
   getGymData: () => {
     const data = readDB();
+    const defaultProfile = {
+      goalType: 'tonificar',
+      goalLabel: '⚡ Tonificar y Ponerse en Forma',
+      customFocus: '',
+      level: 'Adaptación / Progresivo',
+      targetDaysPerWeek: 3,
+      targetWeightKg: null
+    };
+    const goals = data.gymGoals || {};
     return {
       workouts: data.gymWorkouts || [],
       bodyWeights: data.gymBodyWeights || [],
-      goals: data.gymGoals || {
-        Ismael: { targetDaysPerWeek: 3, targetWeightKg: null },
-        Sandra: { targetDaysPerWeek: 3, targetWeightKg: null }
+      goals: {
+        Ismael: { ...defaultProfile, ...(goals.Ismael || {}) },
+        Sandra: { ...defaultProfile, ...(goals.Sandra || {}) }
       },
       customRoutines: data.gymCustomRoutines || []
     };
@@ -1005,25 +1014,52 @@ export const db = {
   addGymWorkout: (workout) => {
     const data = readDB();
     if (!data.gymWorkouts) data.gymWorkouts = [];
+    const exercises = Array.isArray(workout.exercises) ? workout.exercises.map(ex => {
+      const setDetails = Array.isArray(ex.setDetails) ? ex.setDetails.map(s => ({
+        reps: String(s.reps ?? ex.reps ?? '12'),
+        weightKg: s.weightKg !== undefined && s.weightKg !== '' ? Number(s.weightKg) : 0,
+        done: s.done !== false
+      })) : [];
+      return {
+        name: (ex.name || '').trim(),
+        machine: (ex.machine || '').trim(),
+        sets: setDetails.length > 0 ? setDetails.length : (Number(ex.sets) || 3),
+        reps: String(ex.reps || '12'),
+        weightKg: ex.weightKg !== undefined && ex.weightKg !== '' ? Number(ex.weightKg) : 0,
+        durationMin: ex.durationMin !== undefined && ex.durationMin !== '' ? Number(ex.durationMin) : 0,
+        completed: ex.completed !== false,
+        setDetails
+      };
+    }) : [];
+
+    const totalVolumeKg = exercises.reduce((sum, ex) => {
+      if (ex.completed === false) return sum;
+      if (Array.isArray(ex.setDetails) && ex.setDetails.length > 0) {
+        return sum + ex.setDetails.reduce((sSum, s) => {
+          if (!s.done) return sSum;
+          const r = parseInt(String(s.reps), 10) || 0;
+          const w = Number(s.weightKg) || 0;
+          return sSum + (r * w);
+        }, 0);
+      }
+      const setsNum = Number(ex.sets) || 0;
+      const repsNum = parseInt(String(ex.reps), 10) || 0;
+      const weightNum = Number(ex.weightKg) || 0;
+      return sum + (setsNum * repsNum * weightNum);
+    }, 0);
+
     const newWorkout = {
       id: Date.now().toString() + '-' + Math.floor(Math.random() * 10000),
       user: workout.user || 'Ismael',
       date: workout.date || new Date().toISOString().split('T')[0],
       routineName: (workout.routineName || 'Entrenamiento en Gimnasio Marbella').trim(),
-      category: workout.category || 'Full Body + Cardio',
+      category: workout.category || 'General',
       durationMin: Number(workout.durationMin) || 45,
       caloriesBurned: Number(workout.caloriesBurned) || 300,
-      feeling: workout.feeling || '💪 Bien',
+      totalVolumeKg: Math.round(totalVolumeKg),
+      feeling: workout.feeling || '💪 Muy bien',
       notes: (workout.notes || '').trim(),
-      exercises: Array.isArray(workout.exercises) ? workout.exercises.map(ex => ({
-        name: (ex.name || '').trim(),
-        machine: (ex.machine || '').trim(),
-        sets: Number(ex.sets) || 3,
-        reps: String(ex.reps || '12'),
-        weightKg: ex.weightKg !== undefined && ex.weightKg !== '' ? Number(ex.weightKg) : 0,
-        durationMin: ex.durationMin !== undefined && ex.durationMin !== '' ? Number(ex.durationMin) : 0,
-        completed: ex.completed !== false
-      })) : [],
+      exercises,
       createdAt: new Date().toISOString()
     };
     data.gymWorkouts.unshift(newWorkout);
@@ -1067,12 +1103,12 @@ export const db = {
     const data = readDB();
     if (!data.gymGoals) {
       data.gymGoals = {
-        Ismael: { targetDaysPerWeek: 3, targetWeightKg: null },
-        Sandra: { targetDaysPerWeek: 3, targetWeightKg: null }
+        Ismael: { targetDaysPerWeek: 3, targetWeightKg: null, goalType: 'tonificar', goalLabel: '⚡ Tonificar y Ponerse en Forma', customFocus: '', level: 'Adaptación / Progresivo' },
+        Sandra: { targetDaysPerWeek: 3, targetWeightKg: null, goalType: 'tonificar', goalLabel: '⚡ Tonificar y Ponerse en Forma', customFocus: '', level: 'Adaptación / Progresivo' }
       };
     }
     if (!data.gymGoals[user]) {
-      data.gymGoals[user] = { targetDaysPerWeek: 3, targetWeightKg: null };
+      data.gymGoals[user] = { targetDaysPerWeek: 3, targetWeightKg: null, goalType: 'tonificar', goalLabel: '⚡ Tonificar y Ponerse en Forma', customFocus: '', level: 'Adaptación / Progresivo' };
     }
     if (goalData.targetDaysPerWeek !== undefined) {
       data.gymGoals[user].targetDaysPerWeek = Number(goalData.targetDaysPerWeek) || 3;
@@ -1081,8 +1117,20 @@ export const db = {
       const w = parseFloat(String(goalData.targetWeightKg).replace(',', '.'));
       data.gymGoals[user].targetWeightKg = (!isNaN(w) && w > 0) ? Number(w.toFixed(1)) : null;
     }
+    if (goalData.goalType !== undefined) {
+      data.gymGoals[user].goalType = goalData.goalType;
+    }
+    if (goalData.goalLabel !== undefined) {
+      data.gymGoals[user].goalLabel = goalData.goalLabel;
+    }
+    if (goalData.customFocus !== undefined) {
+      data.gymGoals[user].customFocus = String(goalData.customFocus).trim();
+    }
+    if (goalData.level !== undefined) {
+      data.gymGoals[user].level = goalData.level;
+    }
     writeDB(data);
-    return data.gymGoals;
+    return db.getGymData().goals;
   },
   saveCustomGymRoutine: (routine) => {
     const data = readDB();

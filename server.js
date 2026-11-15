@@ -1314,13 +1314,34 @@ app.delete('/api/gym/weights/:id', (req, res) => {
 
 app.post('/api/gym/goals', (req, res) => {
   try {
-    const { user, targetDaysPerWeek, targetWeightKg } = req.body;
+    const { user, targetDaysPerWeek, targetWeightKg, goalType, goalLabel, customFocus, level } = req.body;
     if (!user) return res.status(400).json({ error: 'Usuario requerido' });
-    const goals = db.updateGymGoal(user, { targetDaysPerWeek, targetWeightKg });
+    const goals = db.updateGymGoal(user, { targetDaysPerWeek, targetWeightKg, goalType, goalLabel, customFocus, level });
     res.json({ goals });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar objetivos' });
   }
+});
+
+app.get('/manifest-gym.json', (req, res) => {
+  res.json({
+    name: 'Marbella Fit · Personal Trainer',
+    short_name: 'Marbella Fit',
+    description: 'Tu entrenador personal y registro de entrenos en Gimnasio Marbella',
+    start_url: '/gym',
+    scope: '/gym',
+    display: 'standalone',
+    background_color: '#f8fafc',
+    theme_color: '#10b981',
+    icons: [
+      {
+        src: '/favicon.svg',
+        sizes: 'any',
+        type: 'image/svg+xml',
+        purpose: 'any maskable'
+      }
+    ]
+  });
 });
 
 app.post('/api/gym/routines', (req, res) => {
@@ -1343,37 +1364,41 @@ app.delete('/api/gym/routines/:id', (req, res) => {
 
 app.post('/api/gym/ai-coach', async (req, res) => {
   try {
-    const { prompt, user, durationMin } = req.body;
+    const { prompt, user, durationMin, goalLabel, customFocus } = req.body;
     const apiKey = db.getGeminiKey();
     const targetMins = Number(durationMin) || 45;
+    const gymData = db.getGymData();
+    const userGoalObj = (gymData.goals && gymData.goals[user]) || {};
+    const activeGoalText = goalLabel || userGoalObj.goalLabel || 'Ponerse en forma, ganar fuerza y salud';
+    const extraFocusText = customFocus || userGoalObj.customFocus || '';
 
     if (apiKey) {
-      const systemPrompt = `Eres el Entrenador Personal (Personal Trainer) de Ismael y Sandra en el Gimnasio Marbella (Fitness-Place Plaza Elíptica, Vía Lusitana 1, Carabanchel, Madrid).
-Su objetivo principal es PONERSE EN FORMA, TONIFICAR y PERDER PESO de forma saludable, amena y sin lesionarse.
+      const systemPrompt = `Eres el Entrenador Personal (Personal Trainer) de ${user || 'Ismael y Sandra'} en el Gimnasio Marbella (Fitness-Place Plaza Elíptica, Vía Lusitana 1, Carabanchel, Madrid).
+El objetivo elegido por ${user || 'el usuario'} es: "${activeGoalText}"${extraFocusText ? ` (Foco personal extra: "${extraFocusText}")` : ''}.
 Máquinas disponibles en el Gimnasio Marbella:
 - Cardio: Cinta de correr, Bicicleta elíptica, Bicicleta estática / Spinning, Steps.
-- Pierna/Glúteo: Prensa de piernas inclinada/sentada ( placas ), Extensión de cuádriceps en máquina, Curl femoral tumbado/sentado, Máquina de abductores y aductores, Multipower (barra guiada), Sentadilla con mancuerna o TRX.
-- Torso (Espalda/Pecho/Hombro/Brazos): Jalón al pecho en polea alta, Remo sentado en polea baja (Gironda), Press de pecho sentado en máquina, Contractora pectoral (Pec Deck), Press de hombros en máquina, Polea de tríceps (cuerda/barra), Curl de bíceps en polea o mancuernas.
-- Core y Funcional: Colchonetas, Fitball, Cuerdas TRX, Bancos inclinados/planos, Clases de Spinning, Zumba y Pilates.
+- Pierna/Glúteo: Prensa de piernas inclinada/sentada (placas), Extensión de cuádriceps en máquina, Curl femoral tumbado/sentado, Máquina de abductores y aductores, Multipower (barra guiada), Sentadilla con mancuerna o TRX.
+- Torso (Espalda/Pecho/Hombro/Brazos): Jalón al pecho en polea alta, Remo sentado en polea baja (Gironda), Press de pecho sentado en máquina, Contractora pectoral (Pec Deck), Press de hombros en máquina, Polea de tríceps (cuerda/barra), Curl de bíceps en polea o mancuernas, Bancos y Peso libre.
+- Core y Funcional: Colchonetas, Fitball, Cuerdas TRX, Clases de Spinning, Zumba y Pilates.
 
-El usuario (${user || 'Ismael & Sandra'}) pide: "${prompt || 'Hazme una rutina quema-grasa para hoy'}" con duración aproximada de ${targetMins} minutos.
+El usuario (${user || 'Ismael & Sandra'}) pide: "${prompt || 'Hazme una sesión adaptada a mi objetivo para hoy'}" con duración aproximada de ${targetMins} minutos.
 Devuelve EXCLUSIVAMENTE un objeto JSON válido con esta estructura:
 {
   "title": "Nombre motivador de la sesión",
-  "subtitle": "Enfoque principal (ej: Quema-grasa sin impacto / Glúteo y Core / Full Body Express)",
+  "subtitle": "Enfoque principal adaptado al objetivo del usuario",
   "duration": "${targetMins} min",
   "calories": "~350-450 kcal",
-  "goal": "Pérdida de grasa y tonificación",
-  "coachTip": "Consejo cercano y motivador de 2 frases de su entrenador personal para esta sesión",
+  "goal": "${activeGoalText}",
+  "coachTip": "Consejo cercano, técnico y motivador de 2 frases de su entrenador personal para esta sesión",
   "exercises": [
     {
       "name": "Nombre del ejercicio",
       "machine": "Zona / Máquina exacta del Gimnasio Marbella",
       "sets": 3,
-      "reps": "12-15",
+      "reps": "10-12",
       "weightKg": 0,
       "durationMin": 0,
-      "tip": "Consejo rápido de postura o ritmo"
+      "tip": "Consejo rápido de postura, tempo o ejecución"
     }
   ]
 }`;

@@ -1004,6 +1004,8 @@ export const db = {
     return {
       workouts: data.gymWorkouts || [],
       bodyWeights: data.gymBodyWeights || [],
+      meals: data.gymMeals || [],
+      waterLogs: data.gymWaterLogs || {},
       goals: {
         Ismael: { ...defaultProfile, ...(goals.Ismael || {}) },
         Sandra: { ...defaultProfile, ...(goals.Sandra || {}) }
@@ -1051,6 +1053,8 @@ export const db = {
     const newWorkout = {
       id: Date.now().toString() + '-' + Math.floor(Math.random() * 10000),
       user: workout.user || 'Ismael',
+      type: workout.type || 'gym', // 'gym' | 'home'
+      routineId: workout.routineId || null,
       date: workout.date || new Date().toISOString().split('T')[0],
       routineName: (workout.routineName || 'Entrenamiento en Gimnasio Marbella').trim(),
       category: workout.category || 'General',
@@ -1157,6 +1161,40 @@ export const db = {
     data.gymCustomRoutines = data.gymCustomRoutines.filter(r => r.id !== id);
     writeDB(data);
     return data.gymCustomRoutines;
+  },
+  addGymMeal: (meal) => {
+    const data = readDB();
+    if (!data.gymMeals) data.gymMeals = [];
+    const newMeal = {
+      id: Date.now().toString() + '-' + Math.floor(Math.random() * 10000),
+      user: meal.user || 'Ismael',
+      date: meal.date || new Date().toISOString().split('T')[0],
+      mealType: meal.mealType || 'Comida del día',
+      text: (meal.text || '').trim(),
+      calories: Number(meal.calories) || 0,
+      proteinG: Number(meal.proteinG) || 0,
+      score: meal.score || '🟢 Equilibrado',
+      coachFeedback: (meal.coachFeedback || '').trim(),
+      createdAt: new Date().toISOString()
+    };
+    data.gymMeals.unshift(newMeal);
+    writeDB(data);
+    return data.gymMeals;
+  },
+  deleteGymMeal: (id) => {
+    const data = readDB();
+    if (!data.gymMeals) return [];
+    data.gymMeals = data.gymMeals.filter(m => m.id !== id);
+    writeDB(data);
+    return data.gymMeals;
+  },
+  updateGymWater: (user, date, glasses) => {
+    const data = readDB();
+    if (!data.gymWaterLogs) data.gymWaterLogs = {};
+    const key = `${user}_${date}`;
+    data.gymWaterLogs[key] = Math.max(0, Number(glasses) || 0);
+    writeDB(data);
+    return data.gymWaterLogs;
   }
 };
 

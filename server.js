@@ -1362,6 +1362,135 @@ app.delete('/api/gym/routines/:id', (req, res) => {
   }
 });
 
+app.post('/api/gym/water', (req, res) => {
+  try {
+    const { user, date, glasses } = req.body;
+    const waterLogs = db.updateGymWater(user || 'Ismael', date || new Date().toISOString().split('T')[0], glasses);
+    res.json({ waterLogs });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al guardar vasos de agua' });
+  }
+});
+
+app.post('/api/gym/meals', async (req, res) => {
+  try {
+    const { user, date, mealType, text } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'Describe qué has comido' });
+    }
+
+    const apiKey = db.getGeminiKey();
+    const gymData = db.getGymData();
+    const userGoalObj = (gymData.goals && gymData.goals[user]) || {};
+    const goalText = userGoalObj.goalLabel || 'Perder peso y ponerse en forma';
+
+    let analyzed = null;
+
+    if (apiKey) {
+      const prompt = `Eres el nutricionista y entrenador personal de ${user || 'Ismael'} (Objetivo: ${goalText}).
+Acaba de registrar esta comida (${mealType || 'Comida'}): "${text.trim()}".
+Estima de forma realista las calorías aproximadas, gramos de proteína y dale un consejo breve, cercano y práctico de 1-2 frases (por ejemplo cómo compensar en la siguiente comida o qué tal está para su objetivo).
+Devuelve EXCLUSIVAMENTE un JSON válido con este formato:
+{
+  "calories": 550,
+  "proteinG": 32,
+  "score": "🟢 Muy equilibrado",
+  "coachFeedback": "Buen aporte de proteína y saciante. Para la noche acompaña con verdura o algo ligero."
+}
+(En "score" usa solo uno de: "🟢 Muy equilibrado", "🟡 Bien (mejorable)", "🟠 Alto en calorías / Capricho").`;
+
+      const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+      for (const model of models) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 14000);
+          const bodyPayload = {
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.3, responseMimeType: 'application/json' }
+          };
+          if (model.startsWith('gemini-2.5')) {
+            bodyPayload.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+          }
+          const resp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(bodyPayload),
+              signal: controller.signal
+            }
+          );
+          clearTimeout(timer);
+          if (resp.ok) {
+            const data = await resp.json();
+            const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+            const fb = cleaned.indexOf('{');
+            const lb = cleaned.lastIndexOf('}');
+            if (fb !== -1 && lb !== -1) {
+              analyzed = JSON.parse(cleaned.slice(fb, lb + 1));
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!analyzed) {
+      // Estimador nutricional local inteligente si Gemini no responde
+      const lower = text.toLowerCase();
+      let kcal = 380;
+      let prot = 18;
+      if (lower.includes('pollo') || lower.includes('pavo') || lower.includes('ternera') || lower.includes('carne')) { kcal += 180; prot += 26; }
+      if (lower.includes('huevo') || lower.includes('tortilla')) { kcal += 150; prot += 14; }
+      if (lower.includes('atun') || lower.includes('atún') || lower.includes('pescado') || lower.includes('salmon') || lower.includes('salmón') || lower.includes('merluza')) { kcal += 170; prot += 24; }
+      if (lower.includes('arroz') || lower.includes('pasta') || lower.includes('macarrones') || lower.includes('lentejas') || lower.includes('garbanzos')) { kcal += 220; prot += 8; }
+      if (lower.includes('tostada') || lower.includes('pan') || lower.includes('bocadillo')) { kcal += 160; prot += 5; }
+      if (lower.includes('pizza') || lower.includes('hamburguesa') || lower.includes('frito') || lower.includes('patatas fritas') || lower.includes('cerveza') || lower.includes('helado')) { kcal += 420; prot += 10; }
+      if (lower.includes('ensalada') || lower.includes('verdura') || lower.includes('fruta') || lower.includes('manzana') || lower.includes('platano') || lower.includes('plátano')) { kcal += 80; prot += 2; }
+      if (lower.includes('cafe') || lower.includes('café') || lower.includes('yogur') || lower.includes('leche')) { kcal += 90; prot += 6; }
+
+      const isTreat = kcal > 780;
+      const isHighProt = prot >= 28;
+      analyzed = {
+        calories: kcal,
+        proteinG: prot,
+        score: isTreat ? '🟠 Alto en calorías / Capricho' : isHighProt ? '🟢 Muy equilibrado' : '🟡 Bien (mejorable)',
+        coachFeedback: isTreat
+          ? '¡Disfrútalo sin culpa! Compensa en la siguiente comida con proteína limpia (pollo, pescado o huevos) y verdura, y bebe buena agua.'
+          : isHighProt
+          ? '¡Excelente elección! Buena cantidad de proteína para proteger el músculo mientras pierdes grasa.'
+          : 'Comida correcta. Intenta asegurar siempre una ración de proteína (huevo, pollo, atún, yogur proteico) para tener menos hambre luego.'
+      };
+    }
+
+    const meals = db.addGymMeal({
+      user: user || 'Ismael',
+      date: date || new Date().toISOString().split('T')[0],
+      mealType: mealType || 'Comida',
+      text: text.trim(),
+      calories: analyzed.calories,
+      proteinG: analyzed.proteinG,
+      score: analyzed.score,
+      coachFeedback: analyzed.coachFeedback
+    });
+
+    res.status(201).json({ meals, latest: meals[0] });
+  } catch (error) {
+    console.error('[Gym Meal Error]', error);
+    res.status(500).json({ error: 'Error al analizar y guardar la comida' });
+  }
+});
+
+app.delete('/api/gym/meals/:id', (req, res) => {
+  try {
+    const meals = db.deleteGymMeal(req.params.id);
+    res.json({ meals });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar comida' });
+  }
+});
+
 app.post('/api/gym/ai-coach', async (req, res) => {
   try {
     const { prompt, user, durationMin, goalLabel, customFocus } = req.body;

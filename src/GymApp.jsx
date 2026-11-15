@@ -181,6 +181,23 @@ const MARBELLA_MACHINES = [
   { id: 'eliptica', name: 'Bicicleta Elíptica y Spinning', zone: 'Cardio', icon: '⚡', muscles: 'Cardio sin impacto articular', setup: 'Resistencia media (nivel 4-7).', technique: 'Mueve brazos y piernas de forma fluida.' }
 ];
 
+const MOTIVATIONAL_QUOTES = [
+  "✨ Nunca te arrepentirás de haber entrenado hoy. ¡El paso más difícil ya lo has dado al cruzar la puerta!",
+  "💪 No entrenas para castigar a tu cuerpo, entrenas porque te quieres y quieres sentirte fuerte y con energía.",
+  "🔥 Un entrenamiento de 45 minutos es solo el 3% de tu día. ¡Regálate este rato para ti!",
+  "🌟 La motivación te hace empezar, pero el hábito que estáis creando juntos os hará imparables.",
+  "🦋 Dentro de un mes agradecerás muchísimo no haberte quedado hoy en el sofá. ¡Vamos a por ello!",
+  "⚡ No tienes que hacerlo perfecto hoy, solo tienes que cumplir. Cada serie suma.",
+  "🏆 Tu única competición eres tú misma ayer. Un poquito más de fuerza hoy es una gran victoria.",
+  "💖 Recuerda la sensación tan increíble con la que vas a salir por la puerta cuando termines esta sesión.",
+  "🚀 Los días que menos apetece ir al gimnasio son exactamente los días que más cuentan.",
+  "🌈 Cuerpo en movimiento, mente en calma. Usa este entreno para soltar todo el estrés del día.",
+  "🔥 No busques resultados en un día, busca sentirte orgullosa cada vez que terminas tu rutina.",
+  "👫 Entrenar en equipo multiplica las ganas por dos. ¡Hoy vais a salir del Marbella con una sonrisa enorme!",
+  "💎 La disciplina es elegir entre lo que te apetece ahora mismo y lo que más quieres conseguir.",
+  "✨ Cada gota de esfuerzo de hoy es energía, salud y confianza para mañana. ¡Tú puedes con esto y más!"
+];
+
 function GymApp({ onBackToCasita }) {
   const [activeUser, setActiveUser] = useState(() => {
     const saved = localStorage.getItem('hogar_user');
@@ -229,6 +246,11 @@ function GymApp({ onBackToCasita }) {
 
   // Estado de Pestaña 4: MÁQUINAS, OBJETIVO E HISTORIAL
   const [machineFilter, setMachineFilter] = useState('TODAS');
+  const [quoteIdx, setQuoteIdx] = useState(() => new Date().getDate() % MOTIVATIONAL_QUOTES.length);
+
+  const nextQuote = () => {
+    setQuoteIdx((prev) => (prev + 1) % MOTIVATIONAL_QUOTES.length);
+  };
 
   const todayDateStr = new Date().toISOString().split('T')[0];
 
@@ -765,6 +787,64 @@ function GymApp({ onBackToCasita }) {
       </header>
 
       <main style={S.container}>
+
+        {/* Tarjeta de Frase Motivadora antes de entrenar (Visible en Gym y En Casa) */}
+        {(activeTab === 'gym' || activeTab === 'home') && (
+          <div style={{
+            ...S.card,
+            padding: '0.85rem 1rem',
+            background: activeUser === 'Sandra'
+              ? 'linear-gradient(135deg, #fdf2f8 0%, #fff1f2 50%, #ffffff 100%)'
+              : 'linear-gradient(135deg, #eff6ff 0%, #ecfdf5 50%, #ffffff 100%)',
+            border: activeUser === 'Sandra' ? '1px solid #fbcfe8' : '1px solid #bfdbfe',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '0.75rem'
+          }}>
+            <div style={{ flex: 1 }}>
+              <div style={{
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                color: activeUser === 'Sandra' ? '#db2777' : '#2563eb',
+                marginBottom: '0.2rem',
+                letterSpacing: '0.3px'
+              }}>
+                💬 Tu dosis de motivación pre-entreno, {activeUser}
+              </div>
+              <div style={{
+                fontSize: '0.86rem',
+                fontWeight: 700,
+                color: '#0f172a',
+                lineHeight: 1.38,
+                fontStyle: 'italic'
+              }}>
+                "{MOTIVATIONAL_QUOTES[quoteIdx]}"
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={nextQuote}
+              style={{
+                background: '#ffffff',
+                border: activeUser === 'Sandra' ? '1px solid #f9a8d4' : '1px solid #93c5fd',
+                color: activeUser === 'Sandra' ? '#be185d' : '#1d4ed8',
+                borderRadius: '10px',
+                padding: '0.4rem 0.65rem',
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.04)'
+              }}
+              title="Ver otra frase motivadora"
+            >
+              ✨ Otra frase
+            </button>
+          </div>
+        )}
 
         {/* ====================================================================
             PESTAÑA 1: 🏋️ HOY EN EL GYM (FÁCIL, RÁPIDO Y CON AUTO-PROGRESIÓN)

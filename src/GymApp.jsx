@@ -2268,14 +2268,14 @@ function GymApp({ onBackToCasita }) {
                               📍 {ex.machine} · <strong>{ex.sets} {ex.sets === 1 ? 'bloque' : 'series'}</strong>
                             </span>
 
-                            {/* Botón para ver Vídeo Corto de YouTube y guía del ejercicio */}
+                            {/* Botón para ver Imagen Explicativa Paso 1 y Paso 2 del ejercicio */}
                             <button
                               type="button"
                               onClick={() => setVisualModalItem({ name: ex.name, machine: ex.machine })}
                               style={{
-                                background: '#fef2f2',
-                                border: '1px solid #fca5a5',
-                                color: '#b91c1c',
+                                background: '#eff6ff',
+                                border: '1px solid #93c5fd',
+                                color: '#1d4ed8',
                                 borderRadius: '999px',
                                 padding: '0.18rem 0.65rem',
                                 fontSize: '0.7rem',
@@ -2286,7 +2286,7 @@ function GymApp({ onBackToCasita }) {
                                 gap: '0.25rem'
                               }}
                             >
-                              🎬 Vídeo corto (YouTube)
+                              📸 Imagen cómo se hace
                             </button>
                           </div>
                         </div>
@@ -2773,9 +2773,9 @@ function GymApp({ onBackToCasita }) {
                                   setVisualModalItem({ name: ex.name, machine: 'En Casa' });
                                 }}
                                 style={{
-                                  background: '#fef2f2',
-                                  border: '1px solid #fca5a5',
-                                  color: '#b91c1c',
+                                  background: '#eff6ff',
+                                  border: '1px solid #93c5fd',
+                                  color: '#1d4ed8',
                                   borderRadius: '999px',
                                   padding: '0.15rem 0.6rem',
                                   fontSize: '0.68rem',
@@ -2783,7 +2783,7 @@ function GymApp({ onBackToCasita }) {
                                   cursor: 'pointer'
                                 }}
                               >
-                                🎬 Vídeo corto (YouTube)
+                                📸 Imagen cómo se hace
                               </button>
                             </div>
                             <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#059669', marginTop: '0.2rem' }}>
@@ -3538,7 +3538,7 @@ function GymApp({ onBackToCasita }) {
                           width: '100%'
                         }}
                       >
-                        🎬 Ver Vídeo corto (YouTube) y técnica
+                        📸 Ver imágenes explicativas (Inicio → Final)
                       </button>
                     </div>
                   ))}

@@ -1008,6 +1008,106 @@ export const db = {
       targetDaysPerWeek: 3,
       targetWeightKg: null
     };
+    if (!data.gymWorkouts) data.gymWorkouts = [];
+
+    // Asegurar que quedan validados los entrenamientos que Ismael completó ayer en el Gimnasio (2026-11-15) y hoy en Casa (2026-11-16: 8 min + mañana 5 min)
+    if (!data.gymSeededIsmaelNov16) {
+      let changedSeed = false;
+      const hasGymYesterday = data.gymWorkouts.some(
+        w => w.user === 'Ismael' && w.type !== 'home' && w.date === '2026-11-15'
+      );
+      if (!hasGymYesterday) {
+        data.gymWorkouts.push({
+          id: 'seed-gym-ismael-2026-11-15',
+          user: 'Ismael',
+          type: 'gym',
+          routineId: 'dia-1',
+          date: '2026-11-15',
+          routineName: '🔥💪 Día 1: Pecho, Espalda, Bombeo de Brazos + Tableta + Cardio',
+          category: 'Gimnasio Marbella',
+          durationMin: 55,
+          caloriesBurned: 367,
+          totalVolumeKg: 4860,
+          feeling: '💪 Muy bien',
+          notes: 'Sesión completada en Gimnasio Marbella + Cardio 20:43 (3.28 Km · 115.2 kcal · Nivel 6)',
+          exercises: [
+            { name: 'Press de Pecho Sentado', machine: 'Máquina de Pecho', sets: 4, reps: '12', weightKg: 30, isCardio: false, nextAction: 'mejorar', completed: true, setDetails: [] },
+            { name: 'Jalón al Pecho en Polea Alta', machine: 'Polea Alta (Espalda en V)', sets: 4, reps: '12', weightKg: 35, isCardio: false, nextAction: 'mejorar', completed: true, setDetails: [] },
+            { name: 'Curl de Bíceps en Polea Baja o Mancuernas', machine: 'Polea Baja / Mancuernas', sets: 4, reps: '12', weightKg: 12, isCardio: false, nextAction: 'mejorar', completed: true, setDetails: [] },
+            { name: 'Extensión de Tríceps con Cuerda en Polea', machine: 'Estación de Poleas', sets: 4, reps: '12', weightKg: 17.5, isCardio: false, nextAction: 'mejorar', completed: true, setDetails: [] },
+            { name: 'Crunch Abdominal con Peso en Polea / Máquina', machine: 'Polea Alta / Máquina Abs', sets: 4, reps: '15', weightKg: 25, isCardio: false, nextAction: 'mejorar', completed: true, setDetails: [] },
+            { name: 'Plancha Abdominal Dura (Core de Acero)', machine: 'Zona Colchonetas', sets: 3, reps: '45 seg', weightKg: 0, isCardio: true, nextAction: 'mejorar', completed: true, setDetails: [] },
+            { name: 'Cardio Quema-Grasa (Elíptica / Cinta / Bici)', machine: 'Zona Cardio (Pantalla)', sets: 1, reps: '20:43', weightKg: 0, isCardio: true, distanceKm: 3.28, caloriesKcal: 115.2, levelMax: 6, avgPulse: 107, avgRpm: 40, nextAction: 'mejorar', completed: true, setDetails: [] }
+          ],
+          createdAt: '2026-11-15T19:30:00.000Z'
+        });
+        changedSeed = true;
+      }
+
+      const hasHomeMorningToday = data.gymWorkouts.some(
+        w => w.user === 'Ismael' && w.type === 'home' && w.date === '2026-11-16' && w.routineId === 'casa-manana'
+      );
+      if (!hasHomeMorningToday) {
+        data.gymWorkouts.push({
+          id: 'seed-home-manana-ismael-2026-11-16',
+          user: 'Ismael',
+          type: 'home',
+          routineId: 'casa-manana',
+          date: '2026-11-16',
+          routineName: '☀️ Antes del Curro: Despertar, Activar y Quemar (5 min)',
+          category: 'En Casa',
+          durationMin: 6,
+          caloriesBurned: 55,
+          totalVolumeKg: 0,
+          feeling: '🔥 A tope',
+          notes: 'Validado antes de ir al curro',
+          exercises: [
+            { name: 'Sentadillas al aire (a ritmo fluido)', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '15 reps', weightKg: 0, completed: true },
+            { name: 'Flexiones de brazos', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '12 reps', weightKg: 0, completed: true },
+            { name: 'Plancha Abdominal en alfombra/suelo', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '35 seg', weightKg: 0, completed: true },
+            { name: 'Abdominales Crunch + Puente lumbar', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '15 reps', weightKg: 0, completed: true }
+          ],
+          createdAt: '2026-11-16T08:15:00.000Z'
+        });
+        changedSeed = true;
+      }
+
+      const hasHome8MinToday = data.gymWorkouts.some(
+        w => w.user === 'Ismael' && w.type === 'home' && w.date === '2026-11-16' && w.routineId === 'casa-brazos-tableta'
+      );
+      if (!hasHome8MinToday) {
+        data.gymWorkouts.push({
+          id: 'seed-home-8min-ismael-2026-11-16',
+          user: 'Ismael',
+          type: 'home',
+          routineId: 'casa-brazos-tableta',
+          date: '2026-11-16',
+          routineName: '🍫💪 Especial Duro Ismael: Brazos + Tableta de Chocolate (8 min)',
+          category: 'En Casa',
+          durationMin: 8,
+          caloriesBurned: 90,
+          totalVolumeKg: 0,
+          feeling: '🔥 A tope',
+          notes: 'Validado en casa (8 min brazos + tableta)',
+          exercises: [
+            { name: 'Flexiones cerradas (Foco Tríceps y Pecho)', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '12 reps', weightKg: 0, completed: true },
+            { name: 'Crunch Abdominal Superior (Apretando 1s arriba)', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '20 reps', weightKg: 0, completed: true },
+            { name: 'Elevación de Piernas tumbado (Abdomen Inferior)', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '15 reps', weightKg: 0, completed: true },
+            { name: 'Bicicleta Abdominal (Oblicuos y Cintura)', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '24 toques alternos', weightKg: 0, completed: true },
+            { name: 'Plancha Abdominal RKC (Máxima Tensión)', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '45 seg', weightKg: 0, completed: true }
+          ],
+          createdAt: '2026-11-16T15:30:00.000Z'
+        });
+        changedSeed = true;
+      }
+
+      data.gymSeededIsmaelNov16 = true;
+      data.gymWorkouts.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
+      if (changedSeed) {
+        writeDB(data);
+      }
+    }
+
     const goals = data.gymGoals || {};
     return {
       workouts: data.gymWorkouts || [],
@@ -1092,6 +1192,8 @@ export const db = {
     // Si ya había un entrenamiento de gimnasio hoy para este usuario y se vuelve a guardar/actualizar, reemplazarlo para no duplicar el día
     if (workoutType === 'gym') {
       data.gymWorkouts = data.gymWorkouts.filter(w => !(w.user === workoutUser && w.type !== 'home' && w.date === workoutDate));
+    } else if (workoutType === 'home' && workout.routineId) {
+      data.gymWorkouts = data.gymWorkouts.filter(w => !(w.user === workoutUser && w.type === 'home' && w.date === workoutDate && w.routineId === workout.routineId));
     }
 
     const newWorkout = {
@@ -1111,6 +1213,7 @@ export const db = {
       createdAt: new Date().toISOString()
     };
     data.gymWorkouts.unshift(newWorkout);
+    data.gymWorkouts.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
 
     // Limpiar el borrador en curso de hoy si es de gimnasio
     if (workoutType === 'gym' && data.gymInProgress) {

@@ -601,11 +601,24 @@ function GymApp({ onBackToCasita }) {
   const [analyzingCardioIdx, setAnalyzingCardioIdx] = useState(null);
   const [autoSaveFlash, setAutoSaveFlash] = useState('');
 
-  // Estado de Pestaña 2: EN CASA (Salón / Despacho)
+  // Estado de Pestaña 2: EN CASA (Salón / Despacho) — Guardado persistente por rutina
   const [selectedHomeIdx, setSelectedHomeIdx] = useState(0);
-  const [homeChecked, setHomeChecked] = useState({});
+  const [homeCheckedByRoutine, setHomeCheckedByRoutine] = useState(() => {
+    try {
+      const todayKey = new Date().toISOString().split('T')[0];
+      const u = localStorage.getItem('marbella_fit_unlocked_user') || 'Ismael';
+      const raw = localStorage.getItem(`marbella_fit_home_checked_${u}_${todayKey}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      return {};
+    }
+  });
   const [savingHome, setSavingHome] = useState(false);
   const [homeSavedBanner, setHomeSavedBanner] = useState('');
+
+  // Estado de Pestaña Calendario Positivo / Negativo (Gym + Casa)
+  const [calendarMonthOffset, setCalendarMonthOffset] = useState(0);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   // Estado de Pestaña 3: COMIDA Y PESO
   const [mealType, setMealType] = useState('Comida');
@@ -967,6 +980,46 @@ function GymApp({ onBackToCasita }) {
         stateObj: draftPayload
       })
     }).catch(() => {});
+
+    // Si acaba de marcar como ✓ Hecho el último ejercicio que faltaba del día, autovalidar también la sesión completa
+    if (nextExercises.length > 0 && nextExercises.every(ex => ex.completed) && !editingCompletedToday && !savingGym) {
+      const cardioKcalSum = nextExercises
+        .filter(ex => ex.completed && Number(ex.caloriesKcal) > 0)
+        .reduce((acc, ex) => acc + Number(ex.caloriesKcal), 0);
+      const strengthCount = nextExercises.filter(ex => ex.completed && !ex.hasCardioScreen).length;
+      const totalBurned = cardioKcalSum > 0
+        ? Math.round(cardioKcalSum + strengthCount * 42)
+        : Math.round(dayPlan.duration * 8);
+
+      fetch('/api/gym/workouts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workout: {
+            user: activeUser,
+            type: 'gym',
+            routineId: dayPlan.id,
+            date: todayDateStr,
+            routineName: dayPlan.title,
+            durationMin: dayPlan.duration,
+            caloriesBurned: totalBurned,
+            feeling,
+            notes: gymNotes,
+            exercises: nextExercises
+          },
+          together: trainTogether
+        })
+      })
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => {
+          if (d && d.workouts) {
+            setWorkouts(d.workouts);
+            setGymSavedBanner('🎉 ¡Has marcado todos los ejercicios! Día de hoy validado y bloqueado automáticamente.');
+            setTimeout(() => setGymSavedBanner(''), 6000);
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   // Construir o restaurar los ejercicios de hoy (respetando el autoguardado si ya habías marcado ejercicios hoy)
@@ -1147,8 +1200,17 @@ function GymApp({ onBackToCasita }) {
   const homeLevel = Math.floor(userHomeWorkouts.length / 4) + 1; // Sube 1 nivel cada 4 sesiones en casa
   const didHomeToday = userHomeWorkouts.some(w => w.date === todayDateStr);
 
-  const handleCompleteHomeWorkout = async () => {
-    const routine = HOME_ROUTINES[selectedHomeIdx] || HOME_ROUTINES[0];
+  // Comprobar si una rutina concreta de casa ya está validada en una fecha (por defecto hoy)
+  const getValidatedHomeWorkout = (routineObj, dateStr = todayDateStr) => {
+    if (!routineObj) return null;
+    return userHomeWorkouts.find(
+      w => w.date === dateStr && (w.routineId === routineObj.id || w.routineName === routineObj.title)
+    );
+  };
+
+  // Validar y guardar una rutina de Casa en el servidor (al pulsar el botón o automáticamente al marcar todos sus ejercicios)
+  const handleCompleteHomeWorkout = async (customRoutine = null, customDate = todayDateStr) => {
+    const routine = customRoutine || HOME_ROUTINES[selectedHomeIdx] || HOME_ROUTINES[0];
     setSavingHome(true);
     setHomeSavedBanner('');
     try {
@@ -1172,7 +1234,7 @@ function GymApp({ onBackToCasita }) {
             user: activeUser,
             type: 'home',
             routineId: routine.id,
-            date: todayDateStr,
+            date: customDate,
             routineName: routine.title,
             durationMin: routine.durationMin,
             caloriesBurned: routine.calories,
@@ -1186,9 +1248,16 @@ function GymApp({ onBackToCasita }) {
       if (res.ok) {
         const data = await res.json();
         setWorkouts(data.workouts || []);
-        setHomeChecked({});
-        setHomeSavedBanner('🔥 ¡Reto en casa completado! Así se construye la disciplina.');
-        setTimeout(() => setHomeSavedBanner(''), 5000);
+        // Dejar todos los ejercicios de esta rutina marcados como hechos hoy
+        const allTrue = {};
+        routine.exercises.forEach((_, i) => { allTrue[i] = true; });
+        const nextMap = { ...homeCheckedByRoutine, [routine.id]: allTrue };
+        setHomeCheckedByRoutine(nextMap);
+        try {
+          localStorage.setItem(`marbella_fit_home_checked_${activeUser}_${customDate}`, JSON.stringify(nextMap));
+        } catch (_) {}
+        setHomeSavedBanner(`✅ ¡Validado! "${routine.title}" guardado en tu Calendario Positivo (${customDate}).`);
+        setTimeout(() => setHomeSavedBanner(''), 6000);
       }
     } catch (e) {
       console.error(e);
@@ -1196,6 +1265,131 @@ function GymApp({ onBackToCasita }) {
       setSavingHome(false);
     }
   };
+
+  // Marcar un ejercicio individual en Casa (guarda al instante y si completas todos los de la rutina, la valida automáticamente)
+  const toggleHomeExerciseCheck = (routine, idx, forceTrue = false) => {
+    const currentMap = homeCheckedByRoutine[routine.id] || {};
+    const alreadyValidated = !!getValidatedHomeWorkout(routine, todayDateStr);
+    const currentVal = alreadyValidated ? true : !!currentMap[idx];
+    const nextVal = forceTrue ? true : !currentVal;
+    const updatedRoutineMap = { ...currentMap };
+    if (alreadyValidated) {
+      routine.exercises.forEach((_, i) => { updatedRoutineMap[i] = true; });
+    }
+    updatedRoutineMap[idx] = nextVal;
+
+    const nextAll = { ...homeCheckedByRoutine, [routine.id]: updatedRoutineMap };
+    setHomeCheckedByRoutine(nextAll);
+    try {
+      localStorage.setItem(`marbella_fit_home_checked_${activeUser}_${todayDateStr}`, JSON.stringify(nextAll));
+    } catch (_) {}
+
+    // Si todos los ejercicios de la rutina están marcados ✓ y aún no estaba validada hoy, validarla sola al instante
+    const allDoneNow = routine.exercises.every((_, i) => !!updatedRoutineMap[i]);
+    if (allDoneNow && !alreadyValidated && !savingHome) {
+      handleCompleteHomeWorkout(routine, todayDateStr);
+    }
+  };
+
+  // Validar rápidamente un día de Gimnasio en cualquier fecha (ej. desde el Calendario o con 1 toque)
+  const handleQuickValidateGymDay = async (dayPlan, targetDate = todayDateStr) => {
+    if (!dayPlan) return;
+    setSavingGym(true);
+    try {
+      const builtEx = dayPlan.exercises.map(ex => {
+        const prog = getSmartProgressionForExercise(activeUser, ex);
+        return {
+          name: ex.name,
+          machine: ex.machine,
+          sets: ex.sets,
+          reps: prog.reps,
+          weightKg: prog.weightKg,
+          isCardio: !!ex.isCardio,
+          distanceKm: prog.distanceKm || ex.baseKm || null,
+          caloriesKcal: prog.caloriesKcal || ex.baseKcal || null,
+          levelMax: prog.levelMax || ex.baseLevel || null,
+          nextAction: 'mejorar',
+          completed: true
+        };
+      });
+      const res = await fetch('/api/gym/workouts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workout: {
+            user: activeUser,
+            type: 'gym',
+            routineId: dayPlan.id,
+            date: targetDate,
+            routineName: dayPlan.title,
+            durationMin: dayPlan.duration,
+            caloriesBurned: Math.round(dayPlan.duration * 7.5),
+            feeling: '💪 Muy bien',
+            notes: `Validado (${targetDate})`,
+            exercises: builtEx
+          },
+          together: false
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWorkouts(data.workouts || []);
+        setGymSavedBanner(`✅ ¡${dayPlan.shortTab} validado en el fecha ${targetDate}!`);
+        setTimeout(() => setGymSavedBanner(''), 5000);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingGym(false);
+    }
+  };
+
+  // ============================================================================
+  // DATOS PARA EL CALENDARIO POSITIVO (✅) / NEGATIVO (❌) DE GYM Y CASA
+  // ============================================================================
+  const userAllWorkouts = workouts.filter(w => w.user === activeUser);
+  const earliestUserDate = userAllWorkouts.length > 0
+    ? userAllWorkouts.reduce((min, w) => (w.date && w.date < min ? w.date : min), todayDateStr)
+    : todayDateStr;
+
+  const getDayCalendarStatus = (dateStr) => {
+    const dayWorkouts = userAllWorkouts.filter(w => w.date === dateStr);
+    const gymList = dayWorkouts.filter(w => w.type !== 'home');
+    const homeList = dayWorkouts.filter(w => w.type === 'home');
+    const hasGym = gymList.length > 0;
+    const hasHome = homeList.length > 0;
+    const isPositive = hasGym || hasHome;
+    const isFuture = dateStr > todayDateStr;
+    const isBeforeStart = dateStr < earliestUserDate && dateStr < '2026-11-15';
+    const isToday = dateStr === todayDateStr;
+    // Un día es Negativo (❌) si ya ha pasado (o es hoy sin entreno aún) desde que empezaste y no hiciste ni Gym ni Casa
+    const isNegative = !isPositive && !isFuture && !isBeforeStart && !isToday;
+    return { dateStr, dayWorkouts, gymList, homeList, hasGym, hasHome, isPositive, isNegative, isFuture, isToday, isBeforeStart };
+  };
+
+  // Construir los 7 días de la semana actual (Lunes a Domingo) para la tira superior
+  const getCurrentWeekDays = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 Dom, 1 Lun ...
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    const labels = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    return labels.map((lbl, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dayNum = String(d.getDate()).padStart(2, '0');
+      const dStr = `${y}-${m}-${dayNum}`;
+      return {
+        shortDay: lbl,
+        dayNumber: d.getDate(),
+        ...getDayCalendarStatus(dStr)
+      };
+    });
+  };
+  const currentWeekDays = getCurrentWeekDays();
 
   // Estadísticas de Peso Corporal
   const userWeights = bodyWeights.filter(w => w.user === activeUser);
@@ -1399,15 +1593,17 @@ function GymApp({ onBackToCasita }) {
 
   const visibleTabs = activeUser === 'Ismael'
     ? [
-        { id: 'gym', icon: '🏋️', label: 'Hoy (Gym)' },
+        { id: 'gym', icon: '🏋️', label: 'Gym' },
         { id: 'home', icon: '🏠', label: 'En Casa' },
-        { id: 'nutrition', icon: '🍎', label: 'Comida y Peso' },
-        { id: 'machines', icon: '🏢', label: 'Máquinas y Plan' }
+        { id: 'calendar', icon: '📅', label: 'Calendario' },
+        { id: 'nutrition', icon: '🍎', label: 'Comida/Peso' },
+        { id: 'machines', icon: '🏢', label: 'Máquinas' }
       ]
     : [
         { id: 'gym', icon: '🏋️', label: 'Hoy (Gym)' },
+        { id: 'calendar', icon: '📅', label: 'Calendario' },
         { id: 'nutrition', icon: '🍎', label: 'Comida y Peso' },
-        { id: 'machines', icon: '🏢', label: 'Máquinas y Plan' }
+        { id: 'machines', icon: '🏢', label: 'Máquinas' }
       ];
 
   // Si aún no ha iniciado sesión con su contraseña individual, mostrar pantalla de acceso
@@ -1685,6 +1881,94 @@ function GymApp({ onBackToCasita }) {
           </div>
         )}
 
+        {/* TIRA SEMANAL DE DÍAS POSITIVOS (✅) Y NEGATIVOS (❌) EN GYM Y EN CASA */}
+        {(activeTab === 'gym' || activeTab === 'home') && (
+          <div style={{ ...S.card, padding: '0.75rem 0.85rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.35rem' }}>
+              <span style={{ fontSize: '0.73rem', fontWeight: 900, color: '#0f172a' }}>
+                📅 Tu Semana: Positivo (✅) vs Negativo (❌) · Gym y Casa
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveTab('calendar')}
+                style={{
+                  background: '#eff6ff',
+                  border: '1px solid #93c5fd',
+                  color: '#1d4ed8',
+                  borderRadius: '999px',
+                  padding: '0.18rem 0.6rem',
+                  fontSize: '0.68rem',
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                📅 Ver Mes / Validar Días →
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.28rem' }}>
+              {currentWeekDays.map((wd) => {
+                const bg = wd.isPositive
+                  ? '#ecfdf5'
+                  : wd.isNegative
+                  ? '#fef2f2'
+                  : wd.isToday
+                  ? '#fffbeb'
+                  : '#f8fafc';
+                const border = wd.isPositive
+                  ? '2px solid #10b981'
+                  : wd.isNegative
+                  ? '2px solid #ef4444'
+                  : wd.isToday
+                  ? '2px solid #f59e0b'
+                  : '1px solid #e2e8f0';
+                return (
+                  <button
+                    key={wd.dateStr}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCalendarDate(wd.dateStr);
+                      setActiveTab('calendar');
+                    }}
+                    style={{
+                      background: bg,
+                      border,
+                      borderRadius: '10px',
+                      padding: '0.35rem 0.15rem',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '0.1rem'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.62rem', fontWeight: 800, color: wd.isToday ? '#b45309' : '#64748b' }}>
+                      {wd.shortDay} {wd.dayNumber}
+                    </span>
+                    <span style={{ fontSize: '0.88rem', lineHeight: 1.1 }}>
+                      {wd.isPositive ? '✅' : wd.isNegative ? '❌' : wd.isToday ? '⏳' : '·'}
+                    </span>
+                    <span style={{ fontSize: '0.58rem', fontWeight: 800, color: wd.isPositive ? '#047857' : wd.isNegative ? '#dc2626' : '#94a3b8' }}>
+                      {wd.hasGym && wd.hasHome
+                        ? '🏋️+🏠'
+                        : wd.hasGym
+                        ? '🏋️ Gym'
+                        : wd.hasHome
+                        ? `🏠×${wd.homeList.length}`
+                        : wd.isNegative
+                        ? 'Falta'
+                        : wd.isToday
+                        ? 'Hoy'
+                        : '—'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ====================================================================
             PESTAÑA 1: 🏋️ HOY EN EL GYM (FÁCIL, RÁPIDO Y PROGRESIÓN POR MÁQUINA)
            ==================================================================== */}
@@ -1856,27 +2140,41 @@ function GymApp({ onBackToCasita }) {
                     </div>
                   </div>
 
-                  {/* Botones Día 1, Día 2, Día 3, Día 4 */}
+                  {/* Botones Día 1, Día 2, Día 3, Día 4 (Mostrando cuáles ya están validados) */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.35rem', marginBottom: '0.8rem' }}>
-                    {activeGymDays.map((d, idx) => (
-                      <button
-                        key={d.id}
-                        type="button"
-                        onClick={() => setSelectedDayIdx(idx)}
-                        style={{
-                          padding: '0.5rem 0.25rem',
-                          borderRadius: '10px',
-                          border: selectedDayIdx === idx ? '2px solid #059669' : '1px solid #e2e8f0',
-                          background: selectedDayIdx === idx ? '#ecfdf5' : '#f8fafc',
-                          color: selectedDayIdx === idx ? '#047857' : '#475569',
-                          fontWeight: 800,
-                          fontSize: '0.74rem',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Día {d.dayNumber}
-                      </button>
-                    ))}
+                    {activeGymDays.map((d, idx) => {
+                      const recentCompletion = workouts.find(
+                        w => w.user === activeUser && w.type !== 'home' && (w.routineId === d.id || w.routineName?.includes(`Día ${d.dayNumber}`))
+                      );
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => setSelectedDayIdx(idx)}
+                          style={{
+                            padding: '0.45rem 0.2rem',
+                            borderRadius: '10px',
+                            border: selectedDayIdx === idx ? '2px solid #059669' : recentCompletion ? '1px solid #6ee7b7' : '1px solid #e2e8f0',
+                            background: selectedDayIdx === idx ? '#ecfdf5' : recentCompletion ? '#f0fdf4' : '#f8fafc',
+                            color: selectedDayIdx === idx ? '#047857' : '#475569',
+                            fontWeight: 800,
+                            fontSize: '0.73rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '0.1rem'
+                          }}
+                        >
+                          <span>Día {d.dayNumber} {recentCompletion ? '✅' : ''}</span>
+                          {recentCompletion && (
+                            <span style={{ fontSize: '0.58rem', color: '#059669', fontWeight: 800 }}>
+                              Hecho {recentCompletion.date.slice(5)}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   <h2 style={{ margin: '0 0 0.2rem 0', fontSize: '1.12rem', color: '#0f172a' }}>
@@ -1970,16 +2268,16 @@ function GymApp({ onBackToCasita }) {
                               📍 {ex.machine} · <strong>{ex.sets} {ex.sets === 1 ? 'bloque' : 'series'}</strong>
                             </span>
 
-                            {/* Botón para ver foto y animación del ejercicio/máquina */}
+                            {/* Botón para ver Vídeo Corto de YouTube y guía del ejercicio */}
                             <button
                               type="button"
                               onClick={() => setVisualModalItem({ name: ex.name, machine: ex.machine })}
                               style={{
-                                background: '#eff6ff',
-                                border: '1px solid #93c5fd',
-                                color: '#1d4ed8',
+                                background: '#fef2f2',
+                                border: '1px solid #fca5a5',
+                                color: '#b91c1c',
                                 borderRadius: '999px',
-                                padding: '0.18rem 0.6rem',
+                                padding: '0.18rem 0.65rem',
                                 fontSize: '0.7rem',
                                 fontWeight: 800,
                                 cursor: 'pointer',
@@ -1988,7 +2286,7 @@ function GymApp({ onBackToCasita }) {
                                 gap: '0.25rem'
                               }}
                             >
-                              📸 Ver máquina / Ejercicio
+                              🎬 Vídeo corto (YouTube)
                             </button>
                           </div>
                         </div>
@@ -2327,170 +2625,572 @@ function GymApp({ onBackToCasita }) {
               background: didHomeToday
                 ? 'linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%)'
                 : 'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)',
-              border: didHomeToday ? '1px solid #a7f3d0' : '1px solid #fed7aa'
+              border: didHomeToday ? '2px solid #10b981' : '1px solid #fed7aa'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div>
                   <span style={{
                     fontSize: '0.7rem',
-                    fontWeight: 800,
-                    padding: '0.18rem 0.6rem',
+                    fontWeight: 900,
+                    padding: '0.2rem 0.65rem',
                     borderRadius: '999px',
-                    background: '#ffffff',
-                    color: didHomeToday ? '#059669' : '#ea580c',
-                    border: `1px solid ${didHomeToday ? '#a7f3d0' : '#fed7aa'}`
+                    background: didHomeToday ? '#059669' : '#ffffff',
+                    color: didHomeToday ? '#ffffff' : '#ea580c',
+                    border: `1px solid ${didHomeToday ? '#059669' : '#fed7aa'}`
                   }}>
-                    {didHomeToday ? '✅ ¡Reto en casa cumplido hoy!' : '⏰ ¡Oblígate 5 minutos hoy en el salón o despacho!'}
+                    {didHomeToday
+                      ? `✅ ¡Reto en casa VALIDADO HOY! (${userHomeWorkouts.filter(w => w.date === todayDateStr).length} ${userHomeWorkouts.filter(w => w.date === todayDateStr).length === 1 ? 'rutina hecha' : 'rutinas hechas'})`
+                      : '⏰ ¡Oblígate 5-8 minutos hoy en el salón o despacho!'}
                   </span>
                   <h2 style={{ margin: '0.4rem 0 0.15rem 0', fontSize: '1.15rem', color: '#0f172a' }}>
                     🏠 Ejercicios Rápidos en Casa con Adán ({activeUser})
                   </h2>
                   <p style={{ margin: 0, fontSize: '0.8rem', color: '#475569' }}>
-                    Tus repeticiones suben solas cada 4 sesiones completadas · <strong>Nivel actual en casa: Nivel {homeLevel}</strong> ({userHomeWorkouts.length} sesiones hechas).
+                    Tus repeticiones suben solas cada 4 sesiones completadas · <strong>Nivel actual en casa: Nivel {homeLevel}</strong> ({userHomeWorkouts.length} sesiones validadas).
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Selector de las 3 micro-rutinas de casa */}
+            {/* Selector de las 3 micro-rutinas de casa con indicador ✅ VALIDADO HOY en cada una */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {HOME_ROUTINES.map((hr, idx) => (
-                <button
-                  key={hr.id}
-                  type="button"
-                  onClick={() => { setSelectedHomeIdx(idx); setHomeChecked({}); }}
-                  style={{
-                    textAlign: 'left',
-                    padding: '0.85rem 1rem',
-                    borderRadius: '14px',
-                    border: selectedHomeIdx === idx ? '2px solid #059669' : '1px solid #e2e8f0',
-                    background: selectedHomeIdx === idx ? '#ecfdf5' : '#ffffff',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>{hr.title}</strong>
-                    <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#059669' }}>⏱️ {hr.durationMin} min</span>
-                  </div>
-                  <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: '0.2rem' }}>{hr.desc}</div>
-                </button>
-              ))}
+              {HOME_ROUTINES.map((hr, idx) => {
+                const validatedToday = !!getValidatedHomeWorkout(hr, todayDateStr);
+                const isSelected = selectedHomeIdx === idx;
+                return (
+                  <button
+                    key={hr.id}
+                    type="button"
+                    onClick={() => setSelectedHomeIdx(idx)}
+                    style={{
+                      textAlign: 'left',
+                      padding: '0.85rem 1rem',
+                      borderRadius: '14px',
+                      border: validatedToday
+                        ? '2px solid #10b981'
+                        : isSelected
+                        ? '2px solid #2563eb'
+                        : '1px solid #e2e8f0',
+                      background: validatedToday
+                        ? '#ecfdf5'
+                        : isSelected
+                        ? '#eff6ff'
+                        : '#ffffff',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>{hr.title}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        {validatedToday && (
+                          <span style={{
+                            background: '#059669',
+                            color: '#ffffff',
+                            padding: '0.15rem 0.55rem',
+                            borderRadius: '999px',
+                            fontSize: '0.68rem',
+                            fontWeight: 900
+                          }}>
+                            ✅ VALIDADO HOY
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#059669' }}>⏱️ {hr.durationMin} min</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '0.76rem', color: '#475569', marginTop: '0.2rem' }}>{hr.desc}</div>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Ejercicios del reto en casa seleccionado */}
-            <div style={S.card}>
-              <h3 style={{ margin: '0 0 0.65rem 0', fontSize: '1rem', color: '#0f172a' }}>
-                📋 Haz estos {currentHomeRoutine.exercises.length} ejercicios seguidos (Nivel {homeLevel}):
-              </h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '0.9rem' }}>
-                {currentHomeRoutine.exercises.map((ex, idx) => {
-                  const targetVal = ex.baseTarget + ((homeLevel - 1) * ex.scalePerLevel);
-                  const isDone = !!homeChecked[idx];
-                  return (
-                    <div
-                      key={idx}
-                      onClick={() => setHomeChecked({ ...homeChecked, [idx]: !isDone })}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: '0.6rem',
-                        padding: '0.75rem',
-                        borderRadius: '12px',
-                        border: isDone ? '2px solid #10b981' : '1px solid #e2e8f0',
-                        background: isDone ? '#ecfdf5' : '#f8fafc',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a', textDecoration: isDone ? 'line-through' : 'none' }}>
-                            {idx + 1}. {ex.name}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setVisualModalItem({ name: ex.name, machine: 'En Casa' });
-                            }}
-                            style={{
-                              background: '#eff6ff',
-                              border: '1px solid #93c5fd',
-                              color: '#1d4ed8',
-                              borderRadius: '999px',
-                              padding: '0.15rem 0.55rem',
-                              fontSize: '0.68rem',
-                              fontWeight: 800,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            📸 Ver ejercicio
-                          </button>
-                        </div>
-                        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#059669', marginTop: '0.15rem' }}>
-                          🎯 Objetivo hoy: {targetVal} {ex.unit}
-                          {homeLevel > 1 && <span style={{ fontSize: '0.7rem', color: '#2563eb', marginLeft: '0.4rem' }}>(+{ (homeLevel - 1) * ex.scalePerLevel } por tu nivel {homeLevel})</span>}
-                        </div>
-                        <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '0.15rem' }}>
-                          💡 {ex.tip}
-                        </div>
-                        {parseExerciseDurationSeconds(`${targetVal} ${ex.unit}`) && (
-                          <InlineExerciseTimer
-                            initialSeconds={parseExerciseDurationSeconds(`${targetVal} ${ex.unit}`)}
-                            sets={1}
-                            onComplete={() => setHomeChecked((prev) => ({ ...prev, [idx]: true }))}
-                          />
-                        )}
-                      </div>
-
-                      <div style={{
-                        minWidth: '36px',
-                        height: '36px',
-                        borderRadius: '10px',
-                        background: isDone ? '#10b981' : '#ffffff',
-                        border: '1px solid #cbd5e1',
-                        color: isDone ? '#ffffff' : '#94a3b8',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 900,
-                        fontSize: '1.1rem'
-                      }}>
-                        ✓
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {homeSavedBanner && (
+            {(() => {
+              const currentRoutineValidated = getValidatedHomeWorkout(currentHomeRoutine, todayDateStr);
+              const routineCheckMap = homeCheckedByRoutine[currentHomeRoutine.id] || {};
+              return (
                 <div style={{
-                  background: '#ecfdf5',
-                  border: '1px solid #6ee7b7',
-                  color: '#047857',
-                  padding: '0.7rem',
-                  borderRadius: '10px',
-                  fontWeight: 800,
-                  fontSize: '0.84rem',
-                  textAlign: 'center',
-                  marginBottom: '0.75rem'
+                  ...S.card,
+                  border: currentRoutineValidated ? '2px solid #10b981' : '1px solid #e2e8f0'
                 }}>
-                  {homeSavedBanner}
-                </div>
-              )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.65rem' }}>
+                    <h3 style={{ margin: 0, fontSize: '1rem', color: '#0f172a' }}>
+                      📋 {currentHomeRoutine.exercises.length} ejercicios seguidos (Nivel {homeLevel}):
+                    </h3>
+                    {currentRoutineValidated && (
+                      <span style={{
+                        background: '#ecfdf5',
+                        border: '1px solid #6ee7b7',
+                        color: '#047857',
+                        padding: '0.2rem 0.65rem',
+                        borderRadius: '999px',
+                        fontSize: '0.72rem',
+                        fontWeight: 900
+                      }}>
+                        ✅ Completado y Validado Hoy
+                      </span>
+                    )}
+                  </div>
 
-              <button
-                type="button"
-                disabled={savingHome}
-                onClick={handleCompleteHomeWorkout}
-                style={{ ...S.btnGreen, width: '100%', padding: '0.85rem', fontSize: '0.95rem' }}
-              >
-                {savingHome ? 'Registrando...' : '✅ ¡Hecho! Marcar Reto en Casa Completado'}
-              </button>
-            </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '0.9rem' }}>
+                    {currentHomeRoutine.exercises.map((ex, idx) => {
+                      const targetVal = ex.baseTarget + ((homeLevel - 1) * ex.scalePerLevel);
+                      const isDone = currentRoutineValidated ? true : !!routineCheckMap[idx];
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => toggleHomeExerciseCheck(currentHomeRoutine, idx)}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '0.6rem',
+                            padding: '0.75rem',
+                            borderRadius: '12px',
+                            border: isDone ? '2px solid #10b981' : '1px solid #e2e8f0',
+                            background: isDone ? '#ecfdf5' : '#f8fafc',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                              <span style={{
+                                background: isDone ? '#059669' : '#0f172a',
+                                color: '#ffffff',
+                                borderRadius: '6px',
+                                padding: '0.1rem 0.45rem',
+                                fontSize: '0.7rem',
+                                fontWeight: 800
+                              }}>
+                                {isDone ? `✓ Hecho` : `Paso ${idx + 1}`}
+                              </span>
+                              <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#0f172a' }}>
+                                {ex.name}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setVisualModalItem({ name: ex.name, machine: 'En Casa' });
+                                }}
+                                style={{
+                                  background: '#fef2f2',
+                                  border: '1px solid #fca5a5',
+                                  color: '#b91c1c',
+                                  borderRadius: '999px',
+                                  padding: '0.15rem 0.6rem',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 800,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                🎬 Vídeo corto (YouTube)
+                              </button>
+                            </div>
+                            <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#059669', marginTop: '0.2rem' }}>
+                              🎯 Objetivo hoy: {targetVal} {ex.unit}
+                              {homeLevel > 1 && <span style={{ fontSize: '0.7rem', color: '#2563eb', marginLeft: '0.4rem' }}>(+{ (homeLevel - 1) * ex.scalePerLevel } por tu nivel {homeLevel})</span>}
+                            </div>
+                            <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '0.15rem' }}>
+                              💡 {ex.tip}
+                            </div>
+                            {parseExerciseDurationSeconds(`${targetVal} ${ex.unit}`) && (
+                              <InlineExerciseTimer
+                                initialSeconds={parseExerciseDurationSeconds(`${targetVal} ${ex.unit}`)}
+                                sets={1}
+                                onComplete={() => toggleHomeExerciseCheck(currentHomeRoutine, idx, true)}
+                              />
+                            )}
+                          </div>
+
+                          <div style={{
+                            minWidth: '38px',
+                            height: '38px',
+                            borderRadius: '10px',
+                            background: isDone ? '#10b981' : '#ffffff',
+                            border: isDone ? '1px solid #059669' : '1px solid #cbd5e1',
+                            color: isDone ? '#ffffff' : '#94a3b8',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 900,
+                            fontSize: '1.15rem'
+                          }}>
+                            ✓
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {homeSavedBanner && (
+                    <div style={{
+                      background: '#ecfdf5',
+                      border: '1px solid #6ee7b7',
+                      color: '#047857',
+                      padding: '0.7rem',
+                      borderRadius: '10px',
+                      fontWeight: 800,
+                      fontSize: '0.84rem',
+                      textAlign: 'center',
+                      marginBottom: '0.75rem'
+                    }}>
+                      {homeSavedBanner}
+                    </div>
+                  )}
+
+                  {currentRoutineValidated ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{
+                        flex: 1,
+                        background: '#ecfdf5',
+                        border: '2px solid #10b981',
+                        color: '#047857',
+                        borderRadius: '12px',
+                        padding: '0.8rem',
+                        fontWeight: 900,
+                        fontSize: '0.9rem',
+                        textAlign: 'center'
+                      }}>
+                        ✅ VALIDADO Y GUARDADO EN TU CALENDARIO DE HOY
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!window.confirm('¿Desmarcar esta rutina de hoy?')) return;
+                          const res = await fetch(`/api/gym/workouts/${currentRoutineValidated.id}`, { method: 'DELETE' });
+                          if (res.ok) {
+                            const d = await res.json();
+                            setWorkouts(d.workouts || []);
+                            const nextMap = { ...homeCheckedByRoutine, [currentHomeRoutine.id]: {} };
+                            setHomeCheckedByRoutine(nextMap);
+                          }
+                        }}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #cbd5e1',
+                          color: '#64748b',
+                          borderRadius: '12px',
+                          padding: '0.8rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 800,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Desmarcar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={savingHome}
+                      onClick={() => handleCompleteHomeWorkout(currentHomeRoutine, todayDateStr)}
+                      style={{ ...S.btnGreen, width: '100%', padding: '0.85rem', fontSize: '0.95rem' }}
+                    >
+                      {savingHome ? 'Validando...' : '✅ ¡Hecho! Validar y Guardar esta Rutina en Casa'}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
+
+        {/* ====================================================================
+            PESTAÑA CALENDARIO: 📅 POSITIVO (✅) / NEGATIVO (❌) DE GYM Y CASA
+           ==================================================================== */}
+        {activeTab === 'calendar' && (() => {
+          const baseNow = new Date();
+          const viewDate = new Date(baseNow.getFullYear(), baseNow.getMonth() + calendarMonthOffset, 1);
+          const viewYear = viewDate.getFullYear();
+          const viewMonth = viewDate.getMonth();
+          const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+          const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+          const firstDayDow = new Date(viewYear, viewMonth, 1).getDay(); // 0 Dom, 1 Lun...
+          const leadingEmpty = firstDayDow === 0 ? 6 : firstDayDow - 1;
+
+          const monthDayCells = [];
+          for (let d = 1; d <= daysInMonth; d++) {
+            const dStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            monthDayCells.push({ dayNum: d, ...getDayCalendarStatus(dStr) });
+          }
+
+          const positiveCount = monthDayCells.filter(c => c.isPositive).length;
+          const negativeCount = monthDayCells.filter(c => c.isNegative).length;
+          const gymCountMonth = monthDayCells.reduce((acc, c) => acc + c.gymList.length, 0);
+          const homeCountMonth = monthDayCells.reduce((acc, c) => acc + c.homeList.length, 0);
+
+          const selectedDayInfo = getDayCalendarStatus(selectedCalendarDate);
+
+          return (
+            <>
+              {/* Resumen Mensual Positivo vs Negativo */}
+              <div style={S.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1.12rem', color: '#0f172a' }}>
+                      📅 Calendario de Disciplina de {activeUser}
+                    </h2>
+                    <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.77rem', color: '#64748b' }}>
+                      Verde (✅ Positivo) cuando cumples en Gimnasio o Casa · Rojo (❌ Negativo) si pasa el día en blanco.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setCalendarMonthOffset(calendarMonthOffset - 1)}
+                      style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.3rem 0.6rem', fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      ◀
+                    </button>
+                    <span style={{ fontWeight: 900, fontSize: '0.88rem', color: '#0f172a', minWidth: '125px', textAlign: 'center' }}>
+                      {monthNames[viewMonth]} {viewYear}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCalendarMonthOffset(calendarMonthOffset + 1)}
+                      style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.3rem 0.6rem', fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      ▶
+                    </button>
+                  </div>
+                </div>
+
+                {/* Marcadores grandes del mes */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.45rem', marginBottom: '0.85rem' }}>
+                  <div style={{ background: '#ecfdf5', border: '1px solid #6ee7b7', borderRadius: '12px', padding: '0.55rem 0.35rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#047857' }}>DÍAS POSITIVOS</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#059669' }}>✅ {positiveCount}</div>
+                  </div>
+                  <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: '12px', padding: '0.55rem 0.35rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#1d4ed8' }}>SESIONES GYM</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#2563eb' }}>🏋️ {gymCountMonth}</div>
+                  </div>
+                  <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '0.55rem 0.35rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#c2410c' }}>RUTINAS CASA</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#ea580c' }}>🏠 {homeCountMonth}</div>
+                  </div>
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', padding: '0.55rem 0.35rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#b91c1c' }}>DÍAS NEGATIVOS</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#dc2626' }}>❌ {negativeCount}</div>
+                  </div>
+                </div>
+
+                {/* Cuadrícula del mes (Lunes a Domingo) */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.3rem', textAlign: 'center', marginBottom: '0.3rem' }}>
+                  {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => (
+                    <div key={d} style={{ fontSize: '0.68rem', fontWeight: 800, color: '#64748b', padding: '0.2rem 0' }}>{d}</div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.3rem' }}>
+                  {Array.from({ length: leadingEmpty }).map((_, i) => (
+                    <div key={`empty-${i}`} style={{ minHeight: '56px' }} />
+                  ))}
+
+                  {monthDayCells.map(cell => {
+                    const isSel = selectedCalendarDate === cell.dateStr;
+                    const bg = cell.isPositive
+                      ? '#ecfdf5'
+                      : cell.isNegative
+                      ? '#fef2f2'
+                      : cell.isToday
+                      ? '#fffbeb'
+                      : '#f8fafc';
+                    const border = isSel
+                      ? '2.5px solid #0f172a'
+                      : cell.isPositive
+                      ? '2px solid #10b981'
+                      : cell.isNegative
+                      ? '1.5px solid #fca5a5'
+                      : cell.isToday
+                      ? '2px solid #f59e0b'
+                      : '1px solid #e2e8f0';
+
+                    return (
+                      <button
+                        key={cell.dateStr}
+                        type="button"
+                        onClick={() => setSelectedCalendarDate(cell.dateStr)}
+                        style={{
+                          minHeight: '58px',
+                          background: bg,
+                          border,
+                          borderRadius: '10px',
+                          padding: '0.25rem 0.15rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <span style={{ fontSize: '0.72rem', fontWeight: 900, color: cell.isPositive ? '#047857' : cell.isNegative ? '#b91c1c' : '#334155' }}>
+                          {cell.dayNum}
+                        </span>
+                        <span style={{ fontSize: '0.88rem', lineHeight: 1 }}>
+                          {cell.isPositive ? '✅' : cell.isNegative ? '❌' : cell.isToday ? '⏳' : ''}
+                        </span>
+                        <span style={{ fontSize: '0.58rem', fontWeight: 800, color: cell.isPositive ? '#047857' : cell.isNegative ? '#dc2626' : '#94a3b8' }}>
+                          {cell.hasGym && cell.hasHome
+                            ? '🏋️+🏠'
+                            : cell.hasGym
+                            ? '🏋️ Gym'
+                            : cell.hasHome
+                            ? `🏠×${cell.homeList.length}`
+                            : cell.isNegative
+                            ? 'Negativo'
+                            : ''}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Detalle y Validador con 1 Toque del Día Seleccionado en el Calendario */}
+              <div style={S.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <div>
+                    <span style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 900,
+                      padding: '0.18rem 0.6rem',
+                      borderRadius: '999px',
+                      background: selectedDayInfo.isPositive ? '#ecfdf5' : '#fef2f2',
+                      color: selectedDayInfo.isPositive ? '#047857' : '#b91c1c',
+                      border: `1px solid ${selectedDayInfo.isPositive ? '#6ee7b7' : '#fecaca'}`
+                    }}>
+                      {selectedDayInfo.isPositive ? '🟢 DÍA POSITIVO (VALIDADO)' : '🔴 SIN ENTRENO REGISTRADO'}
+                    </span>
+                    <h3 style={{ margin: '0.35rem 0 0 0', fontSize: '1.02rem', color: '#0f172a' }}>
+                      📌 Día seleccionado: {selectedCalendarDate} {selectedCalendarDate === todayDateStr ? '(HOY)' : ''}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Lista de lo completado en esa fecha */}
+                {selectedDayInfo.dayWorkouts.length === 0 ? (
+                  <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 0.85rem 0' }}>
+                    No hay entrenamientos validados en esta fecha. Si entrenaste este día en el gimnasio o en casa, márcalo abajo con 1 toque:
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', marginBottom: '0.9rem' }}>
+                    {selectedDayInfo.dayWorkouts.map(w => (
+                      <div
+                        key={w.id}
+                        style={{
+                          background: w.type === 'home' ? '#fff7ed' : '#ecfdf5',
+                          border: `1px solid ${w.type === 'home' ? '#fed7aa' : '#6ee7b7'}`,
+                          borderRadius: '10px',
+                          padding: '0.65rem 0.8rem',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '0.5rem'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '0.84rem', fontWeight: 900, color: '#0f172a' }}>
+                            ✅ {w.type === 'home' ? '🏠 En Casa:' : '🏋️ Gimnasio:'} {w.routineName}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#475569' }}>
+                            ⏱️ {w.durationMin} min · 🔥 ~{w.caloriesBurned} kcal {w.notes ? `· ${w.notes}` : ''}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!window.confirm('¿Quitar este entrenamiento de esta fecha?')) return;
+                            const res = await fetch(`/api/gym/workouts/${w.id}`, { method: 'DELETE' });
+                            if (res.ok) {
+                              const d = await res.json();
+                              setWorkouts(d.workouts || []);
+                            }
+                          }}
+                          style={{ background: '#ffffff', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '8px', padding: '0.3rem 0.55rem', fontSize: '0.72rem', fontWeight: 800, cursor: 'pointer' }}
+                        >
+                          🗑️ Quitar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Botones rápidos para Validar Gimnasio o Casa en la fecha seleccionada */}
+                <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '0.75rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', marginBottom: '0.4rem' }}>
+                    🏋️ Validar sesión de Gimnasio en el día {selectedCalendarDate}:
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.4rem', marginBottom: '0.75rem' }}>
+                    {activeGymDays.map(d => {
+                      const doneOnSelected = selectedDayInfo.gymList.some(w => w.routineId === d.id || w.routineName?.includes(`Día ${d.dayNumber}`));
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          disabled={savingGym}
+                          onClick={() => handleQuickValidateGymDay(d, selectedCalendarDate)}
+                          style={{
+                            background: doneOnSelected ? '#ecfdf5' : '#f8fafc',
+                            border: doneOnSelected ? '2px solid #10b981' : '1px solid #cbd5e1',
+                            color: doneOnSelected ? '#047857' : '#0f172a',
+                            borderRadius: '10px',
+                            padding: '0.5rem',
+                            fontSize: '0.74rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            textAlign: 'left'
+                          }}
+                        >
+                          {doneOnSelected ? '✅ ' : '+ Validar '} {d.shortTab}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {activeUser === 'Ismael' && (
+                    <>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#334155', marginBottom: '0.4rem' }}>
+                        🏠 Validar rutina de Casa en el día {selectedCalendarDate}:
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        {HOME_ROUTINES.map(hr => {
+                          const doneOnSelected = selectedDayInfo.homeList.some(w => w.routineId === hr.id || w.routineName === hr.title);
+                          return (
+                            <button
+                              key={hr.id}
+                              type="button"
+                              disabled={savingHome}
+                              onClick={() => handleCompleteHomeWorkout(hr, selectedCalendarDate)}
+                              style={{
+                                background: doneOnSelected ? '#ecfdf5' : '#f8fafc',
+                                border: doneOnSelected ? '2px solid #10b981' : '1px solid #cbd5e1',
+                                color: doneOnSelected ? '#047857' : '#0f172a',
+                                borderRadius: '10px',
+                                padding: '0.55rem 0.75rem',
+                                fontSize: '0.75rem',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <span>{doneOnSelected ? '✅ Validada: ' : '+ Validar: '} {hr.title}</span>
+                              {doneOnSelected && <span style={{ fontSize: '0.68rem', color: '#059669' }}>HECHO</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </>
+          );
+        })()}
 
         {/* ====================================================================
             PESTAÑA 3: 🍎 COMIDA Y PESO (CUÉNTASELO A ADÁN + BÁSCULA)
@@ -2838,7 +3538,7 @@ function GymApp({ onBackToCasita }) {
                           width: '100%'
                         }}
                       >
-                        📸 Ver foto y movimiento de la máquina
+                        🎬 Ver Vídeo corto (YouTube) y técnica
                       </button>
                     </div>
                   ))}

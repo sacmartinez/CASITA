@@ -6,7 +6,7 @@ import fs from 'fs';
 import webpush from 'web-push';
 import cron from 'node-cron';
 import nodemailer from 'nodemailer';
-import { db, syncFromMongoDB } from './db.js';
+import { db, syncFromMongoDB, flushPendingMongoWrites } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,8 +18,55 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// --- CONFIGURACIÓN DE NOTIFICACIONES PUSH ---
-let vapidKeys = null; // Se inicializará dinámicamente en startServer() tras sincronizar la base de datos.
+// --- CONFIGURACIÓN DE NOTIFICACIONES PUSH Y SINCRONIZACIÓN SERVERLESS (VERCEL / RENDER) ---
+let vapidKeys = null;
+let serverInitPromise = null;
+let lastMongoSyncAt = 0;
+
+async function ensureServerReady() {
+  const now = Date.now();
+  if (!serverInitPromise) {
+    serverInitPromise = (async () => {
+      await syncFromMongoDB();
+      lastMongoSyncAt = Date.now();
+      vapidKeys = db.getVapidKeys();
+      if (!vapidKeys) {
+        vapidKeys = webpush.generateVAPIDKeys();
+        db.saveVapidKeys(vapidKeys);
+        await flushPendingMongoWrites();
+      }
+      webpush.setVapidDetails(
+        'mailto:casitahub@example.com',
+        vapidKeys.publicKey,
+        vapidKeys.privateKey
+      );
+    })();
+  }
+  await serverInitPromise;
+
+  // En entornos Serverless como Vercel, refrescar desde MongoDB si han pasado >3s para no servir caché obsoleta entre funciones
+  if (process.env.VERCEL && now - lastMongoSyncAt > 3000) {
+    await syncFromMongoDB();
+    lastMongoSyncAt = Date.now();
+  }
+}
+
+app.use('/api', async (req, res, next) => {
+  try {
+    await ensureServerReady();
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      const origJson = res.json.bind(res);
+      res.json = async (body) => {
+        await flushPendingMongoWrites();
+        return origJson(body);
+      };
+    }
+    next();
+  } catch (err) {
+    console.error('Error en inicialización de petición API:', err);
+    next();
+  }
+});
 
 // Helper para obtener el nombre del otro usuario
 const getOtherUser = (user) => user === 'Ismael' ? 'Sandra' : 'Ismael';
@@ -2148,25 +2195,11 @@ if (fs.existsSync(distPath)) {
   console.log('Modo desarrollo: El servidor backend sólo responde a la API en /api/*');
 }
 
-// --- ARRANCAR SERVIDOR ---
+// --- ARRANCAR SERVIDOR (RENDER / LOCAL) O EXPORTAR PARA VERCEL SERVERLESS ---
 async function startServer() {
   try {
-    // 1. Sincronizar base de datos desde MongoDB Atlas antes de cualquier operación
-    await syncFromMongoDB();
-    
-    // 2. Configurar claves VAPID para notificaciones push una vez cargada la base de datos
-    vapidKeys = db.getVapidKeys();
-    if (!vapidKeys) {
-      vapidKeys = webpush.generateVAPIDKeys();
-      db.saveVapidKeys(vapidKeys);
-      console.log('Nuevas claves VAPID generadas y guardadas en la base de datos.');
-    }
-    webpush.setVapidDetails(
-      'mailto:casitahub@example.com',
-      vapidKeys.publicKey,
-      vapidKeys.privateKey
-    );
-    console.log('🔑 Claves VAPID configuradas con éxito.');
+    await ensureServerReady();
+    console.log('🔑 Claves VAPID y MongoDB sincronizados con éxito.');
   } catch (err) {
     console.error('Error al sincronizar base de datos antes de arrancar:', err);
   }
@@ -2175,4 +2208,9 @@ async function startServer() {
     console.log(`Servidor de Hogar Compartido corriendo en http://localhost:${PORT}`);
   });
 }
-startServer();
+
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;

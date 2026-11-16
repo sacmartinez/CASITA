@@ -5,7 +5,9 @@ import { MongoClient } from 'mongodb';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DB_PATH = path.join(__dirname, 'db.json');
+const IS_VERCEL = !!process.env.VERCEL;
+const SEED_DB_PATH = path.join(__dirname, 'db.json');
+const DB_PATH = IS_VERCEL ? '/tmp/db.json' : SEED_DB_PATH;
 
 const defaultPlanning = [
   { dayId: 1, dayName: 'Lunes', comida: '', cena: '', actividad: '', actividadCompleted: false, actividadCompletedBy: null, completedAt: null, updatedBy: null, updatedAt: null },
@@ -38,8 +40,12 @@ const defaultData = {
 function readDB() {
   try {
     if (!fs.existsSync(DB_PATH)) {
-      writeDB(defaultData);
-      return defaultData;
+      if (IS_VERCEL && fs.existsSync(SEED_DB_PATH)) {
+        fs.copyFileSync(SEED_DB_PATH, DB_PATH);
+      } else {
+        writeDB(defaultData);
+        return defaultData;
+      }
     }
     const content = fs.readFileSync(DB_PATH, 'utf-8');
     const data = JSON.parse(content);
@@ -178,6 +184,17 @@ async function pushToMongoDB(data) {
   }
 }
 
+let pendingMongoPushPromise = null;
+
+export async function flushPendingMongoWrites() {
+  if (pendingMongoPushPromise) {
+    try {
+      await pendingMongoPushPromise;
+    } catch (_) {}
+    pendingMongoPushPromise = null;
+  }
+}
+
 // Guardar base de datos de manera atómica
 function writeDB(data) {
   try {
@@ -185,9 +202,9 @@ function writeDB(data) {
     fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
     fs.renameSync(tempPath, DB_PATH);
 
-    // Si hay variable de entorno, subir en segundo plano
+    // Si hay variable de entorno, subir a MongoDB Atlas (y guardar la promesa para Serverless en Vercel)
     if (process.env.MONGODB_URI) {
-      pushToMongoDB(data).catch(err => console.error('Error al sincronizar en segundo plano:', err));
+      pendingMongoPushPromise = pushToMongoDB(data).catch(err => console.error('Error al sincronizar en segundo plano:', err));
     }
   } catch (error) {
     console.error('Error escribiendo la base de datos:', error);

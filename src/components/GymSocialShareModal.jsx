@@ -56,53 +56,35 @@ export default function GymSocialShareModal({
     ctx.fillStyle = glow2;
     ctx.fillRect(0, 0, width, height);
 
-    // 3. Borde del Marco Exterior Elegante (Respeta safe-zones de Instagram)
+    // 3. Borde del Marco Exterior Elegante
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 3;
     ctx.strokeRect(48, 80, width - 96, height - 160);
 
-    // 4. Cabecera Instagram Story Pill Badge
-    const igGrad = ctx.createLinearGradient(width / 2 - 200, 120, width / 2 + 200, 165);
-    igGrad.addColorStop(0, 'rgba(240, 148, 51, 0.18)');
-    igGrad.addColorStop(0.5, 'rgba(220, 39, 67, 0.18)');
-    igGrad.addColorStop(1, 'rgba(188, 24, 136, 0.18)');
-    ctx.fillStyle = igGrad;
-    ctx.beginPath();
-    ctx.roundRect(width / 2 - 250, 120, 500, 52, 26);
-    ctx.fill();
-
-    ctx.strokeStyle = 'rgba(225, 48, 108, 0.4)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    ctx.fillStyle = '#ff7a9b';
-    ctx.font = '800 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('📸 INSTAGRAM STORIES · CASITA GYM', width / 2, 154);
-
-    // 5. Título Principal de Marca: CASITA GYM
+    // 4. Título Principal de Marca: Solo CASITA GYM
     ctx.fillStyle = '#ffffff';
-    ctx.font = '900 76px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.letterSpacing = '3px';
-    ctx.fillText('CASITA GYM', width / 2, 250);
+    ctx.font = '900 84px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.letterSpacing = '4px';
+    ctx.textAlign = 'center';
+    ctx.fillText('CASITA GYM', width / 2, 205);
 
     // Línea decorativa verde esmeralda
-    const lineGrad = ctx.createLinearGradient(width / 2 - 180, 0, width / 2 + 180, 0);
+    const lineGrad = ctx.createLinearGradient(width / 2 - 200, 0, width / 2 + 200, 0);
     lineGrad.addColorStop(0, 'transparent');
     lineGrad.addColorStop(0.5, '#10b981');
     lineGrad.addColorStop(1, 'transparent');
     ctx.strokeStyle = lineGrad;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3.5;
     ctx.beginPath();
-    ctx.moveTo(width / 2 - 180, 275);
-    ctx.lineTo(width / 2 + 180, 275);
+    ctx.moveTo(width / 2 - 200, 238);
+    ctx.lineTo(width / 2 + 200, 238);
     ctx.stroke();
 
     // Fecha del entrenamiento
     ctx.fillStyle = '#94a3b8';
-    ctx.font = '600 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.font = '600 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     const dateText = workoutData.dateFormatted || new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    ctx.fillText(dateText.toUpperCase(), width / 2, 318);
+    ctx.fillText(dateText.toUpperCase(), width / 2, 290);
 
     // 6. Tarjeta Destacada de Atleta y Rutina
     ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
@@ -365,7 +347,7 @@ export default function GymSocialShareModal({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.6rem' }}>
           <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span>📸</span>
-            <span>Instagram Stories · Casita Gym</span>
+            <span>Compartir · Casita Gym</span>
           </h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.6rem', cursor: 'pointer', lineHeight: 1 }}>
             &times;

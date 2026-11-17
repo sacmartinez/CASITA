@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ExerciseVisualModal from './components/ExerciseVisualModal';
+import GymSocialShareModal from './components/GymSocialShareModal';
 
 const GOAL_OPTIONS = [
   {
@@ -624,6 +625,79 @@ function GymApp({ onBackToCasita }) {
 
   const todayDateStr = getMadridDateStr(0);
 
+  // Auto-posicionar al primer ejercicio a medias / pendiente
+  const hasAutoPositionedRef = useRef(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareWorkoutData, setShareWorkoutData] = useState(null);
+
+  const [workoutStartTime, setWorkoutStartTime] = useState(() => {
+    try {
+      const raw = localStorage.getItem(`casita_gym_session_${activeUser}_${todayDateStr}`);
+      if (raw) return JSON.parse(raw).startTime || null;
+    } catch (_) {}
+    return null;
+  });
+
+  const [workoutStartTimestamp, setWorkoutStartTimestamp] = useState(() => {
+    try {
+      const raw = localStorage.getItem(`casita_gym_session_${activeUser}_${todayDateStr}`);
+      if (raw) return JSON.parse(raw).startTimestamp || null;
+    } catch (_) {}
+    return null;
+  });
+
+  const [isWorkoutStarted, setIsWorkoutStarted] = useState(() => {
+    try {
+      const raw = localStorage.getItem(`casita_gym_session_${activeUser}_${todayDateStr}`);
+      if (raw) return !!JSON.parse(raw).active;
+    } catch (_) {}
+    return false;
+  });
+
+  // Al cambiar de día o usuario, permitir volver a buscar el primer ejercicio a medias
+  useEffect(() => {
+    hasAutoPositionedRef.current = false;
+  }, [selectedDayIdx, activeUser]);
+
+  // Si ya hay ejercicios completados, saltar automáticamente al primero que esté a medias/pendiente
+  useEffect(() => {
+    if (todayExercises && todayExercises.length > 0 && !hasAutoPositionedRef.current) {
+      const firstIncompleteIdx = todayExercises.findIndex(ex => !ex.completed);
+      if (firstIncompleteIdx !== -1) {
+        setCurrentExerciseStep(firstIncompleteIdx);
+      } else {
+        setCurrentExerciseStep(Math.max(0, todayExercises.length - 1));
+      }
+      hasAutoPositionedRef.current = true;
+    }
+  }, [todayExercises, selectedDayIdx, activeUser]);
+
+  // Detectar inicio si ya se marca algún ejercicio
+  useEffect(() => {
+    if (todayExercises.some(ex => ex.completed) && !isWorkoutStarted) {
+      setIsWorkoutStarted(true);
+      if (!workoutStartTime) {
+        const nowStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        setWorkoutStartTime(nowStr);
+        setWorkoutStartTimestamp(Date.now());
+      }
+    }
+  }, [todayExercises, isWorkoutStarted, workoutStartTime]);
+
+  const handleStartWorkout = () => {
+    const nowStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const nowTs = Date.now();
+    setWorkoutStartTime(nowStr);
+    setWorkoutStartTimestamp(nowTs);
+    setIsWorkoutStarted(true);
+    try {
+      localStorage.setItem(
+        `casita_gym_session_${activeUser}_${todayDateStr}`,
+        JSON.stringify({ startTime: nowStr, startTimestamp: nowTs, active: true })
+      );
+    } catch (_) {}
+  };
+
   // Estado de Pestaña 2: EN CASA (Salón / Despacho) — Guardado persistente por rutina
   const [selectedHomeIdx, setSelectedHomeIdx] = useState(0);
   const [homeCheckedByRoutine, setHomeCheckedByRoutine] = useState(() => {
@@ -1206,23 +1280,33 @@ function GymApp({ onBackToCasita }) {
       ? Math.round(cardioKcalSum + strengthCount * 42)
       : Math.round(dayPlan.duration * 8);
 
+    // Calcular hora de fin y tiempo total transcurrido
+    const finishTimeStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const calculatedElapsed = workoutStartTimestamp
+      ? Math.max(1, Math.round((Date.now() - workoutStartTimestamp) / 60000))
+      : (dayPlan.duration || 60);
+
+    const savedWorkoutObj = {
+      user: activeUser,
+      type: 'gym',
+      routineId: dayPlan.id,
+      date: todayDateStr,
+      routineName: dayPlan.title,
+      startTime: workoutStartTime || '18:30',
+      endTime: finishTimeStr,
+      durationMin: calculatedElapsed,
+      caloriesBurned: totalBurned,
+      feeling,
+      notes: gymNotes,
+      exercises: finalExercises
+    };
+
     try {
       const res = await fetch('/api/gym/workouts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          workout: {
-            user: activeUser,
-            type: 'gym',
-            routineId: dayPlan.id,
-            date: todayDateStr,
-            routineName: dayPlan.title,
-            durationMin: dayPlan.duration,
-            caloriesBurned: totalBurned,
-            feeling,
-            notes: gymNotes,
-            exercises: finalExercises
-          },
+          workout: savedWorkoutObj,
           together: trainTogether
         })
       });
@@ -1230,12 +1314,17 @@ function GymApp({ onBackToCasita }) {
         const data = await res.json();
         try {
           localStorage.removeItem(`marbella_fit_inprogress_${activeUser}_${todayDateStr}`);
+          localStorage.removeItem(`casita_gym_session_${activeUser}_${todayDateStr}`);
         } catch (_) {}
         setEditingCompletedToday(false);
+        setIsWorkoutStarted(false);
         setWorkouts(data.workouts || []);
         setGymNotes('');
         setGymSavedBanner('🎉 ¡Entreno de hoy completado y bloqueado hasta mañana!');
         setTimeout(() => setGymSavedBanner(''), 6000);
+        // Preparar tarjeta para compartir en redes
+        setShareWorkoutData(savedWorkoutObj);
+        setShowShareModal(true);
       }
     } catch (e) {
       console.error(e);
@@ -2130,6 +2219,61 @@ function GymApp({ onBackToCasita }) {
                   </div>
                 </div>
 
+                {/* Tiempos de Entrada, Salida y Duración de la sesión */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '0.4rem',
+                  background: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '12px',
+                  padding: '0.65rem 0.8rem',
+                  marginBottom: '0.85rem',
+                  textAlign: 'center'
+                }}>
+                  <div>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', display: 'block' }}>Entrada</span>
+                    <strong style={{ fontSize: '0.95rem', color: '#0f172a' }}>{todayCompletedGymWorkout.startTime || '18:30'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', display: 'block' }}>Salida</span>
+                    <strong style={{ fontSize: '0.95rem', color: '#0f172a' }}>{todayCompletedGymWorkout.endTime || '19:35'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', display: 'block' }}>Duración</span>
+                    <strong style={{ fontSize: '0.95rem', color: '#059669' }}>{todayCompletedGymWorkout.durationMin || 60} min</strong>
+                  </div>
+                </div>
+
+                {/* Botón para Generar y Compartir en Redes con el nombre de Casita Gym y del atleta */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShareWorkoutData(todayCompletedGymWorkout);
+                    setShowShareModal(true);
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '0.8rem 1rem',
+                    fontSize: '0.88rem',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)',
+                    width: '100%',
+                    marginBottom: '0.85rem'
+                  }}
+                >
+                  <span>📸</span>
+                  <span>Generar Imagen para Redes (Casita Gym · {activeUser})</span>
+                </button>
+
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <button
                     type="button"
@@ -2312,6 +2456,77 @@ function GymApp({ onBackToCasita }) {
                     </button>
                   </div>
                 </div>
+
+                {/* BANNER PARA EMPEZAR ENTRENAMIENTO (REGISTRA HORA DE ENTRADA) */}
+                {!isWorkoutStarted ? (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                    color: '#ffffff',
+                    padding: '1.25rem 1rem',
+                    borderRadius: '16px',
+                    boxShadow: '0 6px 20px rgba(5, 150, 105, 0.3)',
+                    textAlign: 'center',
+                    marginBottom: '0.9rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '0.45rem'
+                  }}>
+                    <span style={{ fontSize: '2.4rem' }}>🚀</span>
+                    <h3 style={{ margin: 0, fontSize: '1.18rem', fontWeight: 900 }}>
+                      ¿Listo para entrenar hoy en Marbella Fit?
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '0.82rem', opacity: 0.92, maxWidth: '420px', lineHeight: 1.45 }}>
+                      Pulsa para marcar tu <strong>hora de entrada</strong>. Calcularemos el tiempo exacto en el gym y tus estadísticas para la tarjeta de <strong>Casita Gym</strong>.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleStartWorkout}
+                      style={{
+                        background: '#ffffff',
+                        color: '#047857',
+                        border: 'none',
+                        borderRadius: '12px',
+                        padding: '0.8rem 1.6rem',
+                        fontSize: '0.95rem',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        marginTop: '0.4rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                      }}
+                    >
+                      <span>⏱️ Iniciar Entrenamiento Ahora</span>
+                      <span style={{ fontSize: '0.78rem', background: '#ecfdf5', color: '#047857', padding: '0.2rem 0.5rem', borderRadius: '6px', fontWeight: 800 }}>
+                        {new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: '#ecfdf5',
+                    border: '1px solid #a7f3d0',
+                    borderRadius: '12px',
+                    padding: '0.6rem 0.9rem',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    color: '#065f46',
+                    marginBottom: '0.9rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      <span style={{ fontSize: '1.1rem' }}>🟢</span>
+                      <span>Entrenando desde las <strong>{workoutStartTime || '18:30'}</strong></span>
+                    </div>
+                    <span style={{ fontSize: '0.72rem', background: '#d1fae5', color: '#065f46', padding: '0.2rem 0.5rem', borderRadius: '6px', fontWeight: 800 }}>
+                      ⏱️ En curso
+                    </span>
+                  </div>
+                )}
 
                 {/* INTERFAZ PASO A PASO (STEP-BY-STEP) O LISTA COMPLETA */}
                 <form onSubmit={handleSaveTodayGym} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -3906,6 +4121,14 @@ function GymApp({ onBackToCasita }) {
           onClose={() => setVisualModalItem(null)}
         />
       )}
+
+      {/* MODAL PARA GENERAR Y COMPARTIR IMAGEN DE CASITA GYM EN REDES */}
+      <GymSocialShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        workoutData={shareWorkoutData}
+        userName={activeUser}
+      />
 
       {/* BARRA INFERIOR ADAPTADA AL PERFIL (4 pestañas para Ismael con En Casa, 3 para Sandra solo Gym) */}
       <nav

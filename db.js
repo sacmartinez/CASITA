@@ -1027,19 +1027,36 @@ export const db = {
     };
     if (!data.gymWorkouts) data.gymWorkouts = [];
 
-    // Asegurar que quedan validados los entrenamientos que Ismael completó ayer en el Gimnasio (2026-11-15) y hoy en Casa (2026-11-16: 8 min + mañana 5 min)
-    if (!data.gymSeededIsmaelNov16) {
-      let changedSeed = false;
-      const hasGymYesterday = data.gymWorkouts.some(
-        w => w.user === 'Ismael' && w.type !== 'home' && w.date === '2026-11-15'
+    // Helper para obtener fecha real en zona horaria de Madrid (YYYY-MM-DD)
+    const getMadridDateStr = (daysOffset = 0) => {
+      const d = new Date(Date.now() + daysOffset * 86400000);
+      try {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+      } catch (_) {
+        return d.toISOString().split('T')[0];
+      }
+    };
+
+    // Limpiar semillas antiguas con fecha futura 2026-11-* y aplicar fechas reales dinámicas
+    if (!data.gymSeededDynamicV2) {
+      const realToday = getMadridDateStr(0);
+      const realYesterday = getMadridDateStr(-1);
+
+      // Quitar las semillas que tenían 2026-11-15 / 2026-11-16 fijo
+      data.gymWorkouts = data.gymWorkouts.filter(
+        w => !(w.id && String(w.id).startsWith('seed-') && String(w.date).startsWith('2026-11-'))
       );
-      if (!hasGymYesterday) {
+
+      const hasGymRecent = data.gymWorkouts.some(
+        w => w.user === 'Ismael' && w.type !== 'home' && (w.date === realYesterday || w.date === realToday)
+      );
+      if (!hasGymRecent) {
         data.gymWorkouts.push({
-          id: 'seed-gym-ismael-2026-11-15',
+          id: 'seed-gym-ismael-' + realYesterday,
           user: 'Ismael',
           type: 'gym',
           routineId: 'dia-1',
-          date: '2026-11-15',
+          date: realYesterday,
           routineName: '🔥💪 Día 1: Pecho, Espalda, Bombeo de Brazos + Tableta + Cardio',
           category: 'Gimnasio Marbella',
           durationMin: 55,
@@ -1056,21 +1073,20 @@ export const db = {
             { name: 'Plancha Abdominal Dura (Core de Acero)', machine: 'Zona Colchonetas', sets: 3, reps: '45 seg', weightKg: 0, isCardio: true, nextAction: 'mejorar', completed: true, setDetails: [] },
             { name: 'Cardio Quema-Grasa (Elíptica / Cinta / Bici)', machine: 'Zona Cardio (Pantalla)', sets: 1, reps: '20:43', weightKg: 0, isCardio: true, distanceKm: 3.28, caloriesKcal: 115.2, levelMax: 6, avgPulse: 107, avgRpm: 40, nextAction: 'mejorar', completed: true, setDetails: [] }
           ],
-          createdAt: '2026-11-15T19:30:00.000Z'
+          createdAt: new Date(Date.now() - 86400000).toISOString()
         });
-        changedSeed = true;
       }
 
-      const hasHomeMorningToday = data.gymWorkouts.some(
-        w => w.user === 'Ismael' && w.type === 'home' && w.date === '2026-11-16' && w.routineId === 'casa-manana'
+      const hasHomeMorning = data.gymWorkouts.some(
+        w => w.user === 'Ismael' && w.type === 'home' && w.routineId === 'casa-manana'
       );
-      if (!hasHomeMorningToday) {
+      if (!hasHomeMorning) {
         data.gymWorkouts.push({
-          id: 'seed-home-manana-ismael-2026-11-16',
+          id: 'seed-home-manana-ismael-' + realToday,
           user: 'Ismael',
           type: 'home',
           routineId: 'casa-manana',
-          date: '2026-11-16',
+          date: realToday,
           routineName: '☀️ Antes del Curro: Despertar, Activar y Quemar (5 min)',
           category: 'En Casa',
           durationMin: 6,
@@ -1084,21 +1100,20 @@ export const db = {
             { name: 'Plancha Abdominal en alfombra/suelo', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '35 seg', weightKg: 0, completed: true },
             { name: 'Abdominales Crunch + Puente lumbar', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '15 reps', weightKg: 0, completed: true }
           ],
-          createdAt: '2026-11-16T08:15:00.000Z'
+          createdAt: new Date().toISOString()
         });
-        changedSeed = true;
       }
 
-      const hasHome8MinToday = data.gymWorkouts.some(
-        w => w.user === 'Ismael' && w.type === 'home' && w.date === '2026-11-16' && w.routineId === 'casa-brazos-tableta'
+      const hasHome8Min = data.gymWorkouts.some(
+        w => w.user === 'Ismael' && w.type === 'home' && w.routineId === 'casa-brazos-tableta'
       );
-      if (!hasHome8MinToday) {
+      if (!hasHome8Min) {
         data.gymWorkouts.push({
-          id: 'seed-home-8min-ismael-2026-11-16',
+          id: 'seed-home-8min-ismael-' + realToday,
           user: 'Ismael',
           type: 'home',
           routineId: 'casa-brazos-tableta',
-          date: '2026-11-16',
+          date: realToday,
           routineName: '🍫💪 Especial Duro Ismael: Brazos + Tableta de Chocolate (8 min)',
           category: 'En Casa',
           durationMin: 8,
@@ -1113,16 +1128,13 @@ export const db = {
             { name: 'Bicicleta Abdominal (Oblicuos y Cintura)', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '24 toques alternos', weightKg: 0, completed: true },
             { name: 'Plancha Abdominal RKC (Máxima Tensión)', machine: 'En Casa (Salón / Despacho)', sets: 1, reps: '45 seg', weightKg: 0, completed: true }
           ],
-          createdAt: '2026-11-16T15:30:00.000Z'
+          createdAt: new Date().toISOString()
         });
-        changedSeed = true;
       }
 
-      data.gymSeededIsmaelNov16 = true;
+      data.gymSeededDynamicV2 = true;
       data.gymWorkouts.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
-      if (changedSeed) {
-        writeDB(data);
-      }
+      writeDB(data);
     }
 
     const goals = data.gymGoals || {};
@@ -1143,8 +1155,18 @@ export const db = {
     const data = readDB();
     if (!data.gymInProgress) data.gymInProgress = {};
     const key = `${user}_${date}`;
+    const prev = data.gymInProgress[key] || {};
     data.gymInProgress[key] = {
+      ...prev,
       ...(stateObj || {}),
+      byRoutine: {
+        ...(prev.byRoutine || {}),
+        ...((stateObj && stateObj.byRoutine) || {})
+      },
+      homeCheckedByRoutine: {
+        ...(prev.homeCheckedByRoutine || {}),
+        ...((stateObj && stateObj.homeCheckedByRoutine) || {})
+      },
       updatedAt: new Date().toISOString()
     };
     writeDB(data);
@@ -1406,15 +1428,15 @@ export const db = {
   },
 
   toggleLifeBlock: (date, blockId, done) => {
-    const data = readDB();
     db.getLifeOrganizer();
     const fresh = readDB();
+    const targetDate = date || (new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()));
     if (!fresh.ismaelOrganizer.dailyBlocks) fresh.ismaelOrganizer.dailyBlocks = {};
-    if (!fresh.ismaelOrganizer.dailyBlocks[date]) fresh.ismaelOrganizer.dailyBlocks[date] = {};
+    if (!fresh.ismaelOrganizer.dailyBlocks[targetDate]) fresh.ismaelOrganizer.dailyBlocks[targetDate] = {};
     if (done === undefined) {
-      fresh.ismaelOrganizer.dailyBlocks[date][blockId] = !fresh.ismaelOrganizer.dailyBlocks[date][blockId];
+      fresh.ismaelOrganizer.dailyBlocks[targetDate][blockId] = !fresh.ismaelOrganizer.dailyBlocks[targetDate][blockId];
     } else {
-      fresh.ismaelOrganizer.dailyBlocks[date][blockId] = !!done;
+      fresh.ismaelOrganizer.dailyBlocks[targetDate][blockId] = !!done;
     }
     writeDB(fresh);
     return fresh.ismaelOrganizer;
@@ -1469,8 +1491,9 @@ export const db = {
   updateLifeDailyNote: (date, note) => {
     db.getLifeOrganizer();
     const data = readDB();
+    const targetDate = date || (new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()));
     if (!data.ismaelOrganizer.dailyNotes) data.ismaelOrganizer.dailyNotes = {};
-    data.ismaelOrganizer.dailyNotes[date] = String(note || '');
+    data.ismaelOrganizer.dailyNotes[targetDate] = String(note || '');
     writeDB(data);
     return data.ismaelOrganizer;
   }

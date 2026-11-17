@@ -555,6 +555,21 @@ function InlineExerciseTimer({ initialSeconds, sets = 1, onComplete }) {
   );
 }
 
+// Helper para obtener fecha local en formato YYYY-MM-DD en zona horaria de Madrid (España)
+function getMadridDateStr(daysOffset = 0) {
+  const d = new Date(Date.now() + daysOffset * 86400000);
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Madrid',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(d);
+  } catch (_) {
+    return d.toISOString().split('T')[0];
+  }
+}
+
 function GymApp({ onBackToCasita }) {
   const [unlockedUser, setUnlockedUser] = useState(() => {
     const saved = localStorage.getItem('marbella_fit_unlocked_user');
@@ -601,11 +616,13 @@ function GymApp({ onBackToCasita }) {
   const [analyzingCardioIdx, setAnalyzingCardioIdx] = useState(null);
   const [autoSaveFlash, setAutoSaveFlash] = useState('');
 
+  const todayDateStr = getMadridDateStr(0);
+
   // Estado de Pestaña 2: EN CASA (Salón / Despacho) — Guardado persistente por rutina
   const [selectedHomeIdx, setSelectedHomeIdx] = useState(0);
   const [homeCheckedByRoutine, setHomeCheckedByRoutine] = useState(() => {
     try {
-      const todayKey = new Date().toISOString().split('T')[0];
+      const todayKey = getMadridDateStr(0);
       const u = localStorage.getItem('marbella_fit_unlocked_user') || 'Ismael';
       const raw = localStorage.getItem(`marbella_fit_home_checked_${u}_${todayKey}`);
       return raw ? JSON.parse(raw) : {};
@@ -618,7 +635,7 @@ function GymApp({ onBackToCasita }) {
 
   // Estado de Pestaña Calendario Positivo / Negativo (Gym + Casa)
   const [calendarMonthOffset, setCalendarMonthOffset] = useState(0);
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => getMadridDateStr(0));
 
   // Estado de Pestaña 3: COMIDA Y PESO
   const [mealType, setMealType] = useState('Comida');
@@ -638,7 +655,6 @@ function GymApp({ onBackToCasita }) {
     setQuoteIdx((prev) => (prev + 1) % MOTIVATIONAL_QUOTES.length);
   };
 
-  const todayDateStr = new Date().toISOString().split('T')[0];
   const activeGymDays = activeUser === 'Ismael' ? GYM_DAYS_ISMAEL : GYM_DAYS_SANDRA;
 
   // Screen Wake Lock: evita que el móvil apague/bloquee la pantalla mientras estás en Marbella Fit
@@ -961,14 +977,19 @@ function GymApp({ onBackToCasita }) {
       routineId: dayPlan.id,
       selectedDayIdx: dayIdx,
       exercises: nextExercises,
+      byRoutine: {
+        [dayPlan.id]: nextExercises
+      },
       updatedAt: new Date().toISOString()
     };
     const draftKey = `marbella_fit_inprogress_${activeUser}_${todayDateStr}`;
+    const routineDraftKey = `marbella_fit_inprogress_${activeUser}_${dayPlan.id}_${todayDateStr}`;
     try {
       localStorage.setItem(draftKey, JSON.stringify(draftPayload));
+      localStorage.setItem(routineDraftKey, JSON.stringify(draftPayload));
     } catch (_) {}
 
-    setAutoSaveFlash('💾 Progreso guardado');
+    setAutoSaveFlash('💾 Progreso guardado al instante');
     setTimeout(() => setAutoSaveFlash(''), 2000);
 
     fetch('/api/gym/inprogress', {
@@ -1033,22 +1054,44 @@ function GymApp({ onBackToCasita }) {
     }
 
     // 2. Si hay borrador autoguardado de hoy para este día en localStorage o en el servidor, restaurarlo sin resetear nada
+    const routineDraftKey = `marbella_fit_inprogress_${activeUser}_${dayPlan.id}_${todayDateStr}`;
     const draftKey = `marbella_fit_inprogress_${activeUser}_${todayDateStr}`;
     try {
+      const localRoutineRaw = localStorage.getItem(routineDraftKey);
+      if (localRoutineRaw) {
+        const parsed = JSON.parse(localRoutineRaw);
+        if (parsed && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
+          setTodayExercises(parsed.exercises);
+          return;
+        }
+      }
+
       const localDraftRaw = localStorage.getItem(draftKey);
       if (localDraftRaw) {
         const parsed = JSON.parse(localDraftRaw);
-        if (parsed && parsed.routineId === dayPlan.id && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
-          setTodayExercises(parsed.exercises);
-          return;
+        if (parsed) {
+          if (parsed.byRoutine && Array.isArray(parsed.byRoutine[dayPlan.id]) && parsed.byRoutine[dayPlan.id].length > 0) {
+            setTodayExercises(parsed.byRoutine[dayPlan.id]);
+            return;
+          }
+          if (parsed.routineId === dayPlan.id && Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
+            setTodayExercises(parsed.exercises);
+            return;
+          }
         }
       }
     } catch (_) {}
 
     const srvDraft = serverInProgress[`${activeUser}_${todayDateStr}`];
-    if (srvDraft && srvDraft.routineId === dayPlan.id && Array.isArray(srvDraft.exercises) && srvDraft.exercises.length > 0) {
-      setTodayExercises(srvDraft.exercises);
-      return;
+    if (srvDraft) {
+      if (srvDraft.byRoutine && Array.isArray(srvDraft.byRoutine[dayPlan.id]) && srvDraft.byRoutine[dayPlan.id].length > 0) {
+        setTodayExercises(srvDraft.byRoutine[dayPlan.id]);
+        return;
+      }
+      if (srvDraft.routineId === dayPlan.id && Array.isArray(srvDraft.exercises) && srvDraft.exercises.length > 0) {
+        setTodayExercises(srvDraft.exercises);
+        return;
+      }
     }
 
     // 3. Si aún no ha empezado este día hoy, construir con la progresión inteligente de Adán (empezando con completed: false para ir marcando según los haces)
@@ -1284,12 +1327,39 @@ function GymApp({ onBackToCasita }) {
       localStorage.setItem(`marbella_fit_home_checked_${activeUser}_${todayDateStr}`, JSON.stringify(nextAll));
     } catch (_) {}
 
+    // Sincronizar inmediatamente al servidor para que NUNCA se pierda nada
+    fetch('/api/gym/inprogress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user: activeUser,
+        date: todayDateStr,
+        stateObj: {
+          homeCheckedByRoutine: nextAll
+        }
+      })
+    }).catch(() => {});
+
     // Si todos los ejercicios de la rutina están marcados ✓ y aún no estaba validada hoy, validarla sola al instante
     const allDoneNow = routine.exercises.every((_, i) => !!updatedRoutineMap[i]);
     if (allDoneNow && !alreadyValidated && !savingHome) {
       handleCompleteHomeWorkout(routine, todayDateStr);
     }
   };
+
+  // Restaurar marcas de casa desde el servidor si estaban guardadas
+  useEffect(() => {
+    const srvDraft = serverInProgress[`${activeUser}_${todayDateStr}`];
+    if (srvDraft && srvDraft.homeCheckedByRoutine) {
+      setHomeCheckedByRoutine(prev => {
+        const merged = { ...srvDraft.homeCheckedByRoutine, ...prev };
+        try {
+          localStorage.setItem(`marbella_fit_home_checked_${activeUser}_${todayDateStr}`, JSON.stringify(merged));
+        } catch (_) {}
+        return merged;
+      });
+    }
+  }, [serverInProgress, activeUser, todayDateStr]);
 
   // Validar rápidamente un día de Gimnasio en cualquier fecha (ej. desde el Calendario o con 1 toque)
   const handleQuickValidateGymDay = async (dayPlan, targetDate = todayDateStr) => {
@@ -2238,6 +2308,43 @@ function GymApp({ onBackToCasita }) {
 
                 {/* LISTA PASO A PASO DE LAS MÁQUINAS DE HOY */}
                 <form onSubmit={handleSaveTodayGym} style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                  {/* Barra rápida de progreso y botón de validación inmediata */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '12px',
+                    padding: '0.65rem 0.9rem',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem'
+                  }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#334155' }}>
+                      📋 Progreso de hoy:{' '}
+                      <span style={{ color: '#059669' }}>
+                        {todayExercises.filter(e => e.completed).length} de {todayExercises.length} máquinas marcadas
+                      </span>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={savingGym}
+                      style={{
+                        background: '#059669',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '0.45rem 0.85rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 800,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {savingGym ? 'Guardando...' : '✅ Validar y Guardar Sesión'}
+                    </button>
+                  </div>
+
                   {todayExercises.map((ex, idx) => (
                     <div
                       key={idx}

@@ -86,18 +86,20 @@ export default function GymSocialShareModal({
     const dateText = workoutData.dateFormatted || new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     ctx.fillText(dateText.toUpperCase(), width / 2, 290);
 
+    const isDuo = workoutData.isDuo || workoutData.together || userName === 'Dúo' || userName === 'Ismael & Sandra';
+
     // 6. Tarjeta Destacada de Atleta y Rutina
     ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
     ctx.beginPath();
     ctx.roundRect(70, 355, width - 140, 160, 24);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+    ctx.strokeStyle = isDuo ? 'rgba(236, 72, 153, 0.35)' : 'rgba(56, 189, 248, 0.25)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    ctx.fillStyle = '#38bdf8';
+    ctx.fillStyle = isDuo ? '#f472b6' : '#38bdf8';
     ctx.font = '900 44px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(`🏋️ ATLETA: ${userName.toUpperCase()}`, width / 2, 415);
+    ctx.fillText(isDuo ? '👫 DUO WORKOUT · ISMAEL & SANDRA' : `🏋️ ATLETA: ${userName.toUpperCase()}`, width / 2, 415);
 
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
@@ -106,7 +108,7 @@ export default function GymSocialShareModal({
 
     ctx.fillStyle = '#10b981';
     ctx.font = '600 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('✨ ENTRENAMIENTO COMPLETADO CON ÉXITO', width / 2, 498);
+    ctx.fillText(isDuo ? '✨ ENTRENAMIENTO EN PAREJA SUPERADO JUNTOS' : '✨ ENTRENAMIENTO COMPLETADO CON ÉXITO', width / 2, 498);
 
     // 7. Grid de 4 Métricas Clave (2 columnas x 2 filas)
     const boxW = 450;
@@ -116,7 +118,7 @@ export default function GymSocialShareModal({
         x: 70,
         y: 545,
         icon: '⏱️',
-        label: 'TIEMPO ENTRENANDO',
+        label: isDuo ? 'TIEMPO EN EQUIPO' : 'TIEMPO ENTRENANDO',
         val: `${workoutData.durationMin || 60} MIN`,
         sub: `${workoutData.startTime || '18:30'} → ${workoutData.endTime || '19:35'}`
       },
@@ -124,25 +126,25 @@ export default function GymSocialShareModal({
         x: 560,
         y: 545,
         icon: '🔥',
-        label: 'GASTO CALÓRICO',
-        val: `~${workoutData.caloriesBurned || 450} KCAL`,
-        sub: 'Quema metabólica activa'
+        label: isDuo ? 'QUEMA COMBINADA' : 'GASTO CALÓRICO',
+        val: isDuo ? `~${(workoutData.caloriesBurned || 420) * 2} KCAL` : `~${workoutData.caloriesBurned || 450} KCAL`,
+        sub: isDuo ? 'Gasto total de los dos' : 'Quema metabólica activa'
       },
       {
         x: 70,
         y: 725,
         icon: '💪',
-        label: 'MÁQUINAS / SERIES',
+        label: isDuo ? 'MÁQUINAS JUNTOS' : 'MÁQUINAS / SERIES',
         val: `${workoutData.completedCount || 7} / ${workoutData.totalCount || 7}`,
-        sub: 'Ejercicios completados'
+        sub: 'Series alternadas en pareja'
       },
       {
         x: 560,
         y: 725,
         icon: '⚡',
-        label: 'SENSACIÓN FINAL',
-        val: (workoutData.feeling || 'Muy bien').replace(/[^\w\sñáéíóú]/gi, '').trim().toUpperCase(),
-        sub: 'Nivel de energía superado'
+        label: isDuo ? 'SINCRONIZACIÓN' : 'SENSACIÓN FINAL',
+        val: isDuo ? '100% EQUIPO' : (workoutData.feeling || 'Muy bien').replace(/[^\w\sñáéíóú]/gi, '').trim().toUpperCase(),
+        sub: isDuo ? 'Compañerismo y fuerza' : 'Nivel de energía superado'
       }
     ];
 
@@ -227,24 +229,24 @@ export default function GymSocialShareModal({
     ctx.beginPath();
     ctx.roundRect(70, 1565, width - 140, 130, 20);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(240, 148, 51, 0.3)';
+    ctx.strokeStyle = isDuo ? 'rgba(244, 114, 182, 0.35)' : 'rgba(240, 148, 51, 0.3)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#f8fafc';
     ctx.font = 'bold 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('🎯 "La constancia no se negocia. Un día más sumando."', width / 2, 1618);
+    ctx.fillText(isDuo ? '🎯 "Entrenar en pareja multiplica las ganas por dos."' : '🎯 "La constancia no se negocia. Un día más sumando."', width / 2, 1618);
 
-    ctx.fillStyle = '#fb7185';
+    ctx.fillStyle = isDuo ? '#f472b6' : '#fb7185';
     ctx.font = '800 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('@casitagym · Entrenando juntos todos los días', width / 2, 1662);
+    ctx.fillText(isDuo ? '@casitagym · Ismael & Sandra entrenando en equipo' : '@casitagym · Entrenando juntos todos los días', width / 2, 1662);
 
     // 10. Pie de imagen / Watermark (Safe zone inferior de Instagram)
     ctx.textAlign = 'center';
     ctx.fillStyle = '#64748b';
     ctx.font = '600 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('#CasitaGym #Constancia #Fitness · CasitaOS', width / 2, 1780);
+    ctx.fillText(isDuo ? '#CasitaGym #DuoWorkout #ParejaFit · CasitaOS' : '#CasitaGym #Constancia #Fitness · CasitaOS', width / 2, 1780);
 
     // Exportar como URL de imagen para previsualización
     canvas.toBlob((blob) => {
@@ -258,6 +260,15 @@ export default function GymSocialShareModal({
   if (!isOpen || !workoutData) return null;
 
   const getInstagramCaption = () => {
+    const isDuo = workoutData.isDuo || workoutData.together || userName === 'Dúo' || userName === 'Ismael & Sandra';
+    if (isDuo) {
+      return `👫 ¡Entrenamiento en pareja completado en #CasitaGym!\n\n` +
+        `⏱️ ${workoutData.durationMin || 60} min juntos (${workoutData.startTime || '18:30'} - ${workoutData.endTime || '19:30'})\n` +
+        `🔥 ~${(workoutData.caloriesBurned || 420) * 2} kcal quemadas en equipo\n` +
+        `💪 ${workoutData.completedCount || 7}/${workoutData.totalCount || 7} máquinas compartidas superadas\n` +
+        `⚡ Ismael & Sandra · ¡La constancia en equipo!\n\n` +
+        `#CasitaGym #DuoWorkout #FitnessPareja #Workout @casitagym`;
+    }
     return `🔥 ¡Entrenamiento completado en #CasitaGym!\n\n` +
       `⏱️ ${workoutData.durationMin || 60} min (${workoutData.startTime || '18:30'} - ${workoutData.endTime || '19:30'})\n` +
       `🔥 ~${workoutData.caloriesBurned || 450} kcal activas\n` +

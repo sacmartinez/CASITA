@@ -1464,6 +1464,225 @@ app.post('/api/gym/inprogress', (req, res) => {
   }
 });
 
+// --- RUTAS CO-OP: ENTRENAMIENTO EN PAREJA EN TIEMPO REAL ---
+app.get('/api/gym/coop', (req, res) => {
+  try {
+    const coopSession = db.getGymCoopSession();
+    res.json({ coopSession });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al consultar sesión en pareja' });
+  }
+});
+
+app.post('/api/gym/coop/start', (req, res) => {
+  try {
+    const { user, dayId, routineName, exercises } = req.body;
+    const actor = user || 'Ismael';
+    const partner = getOtherUser(actor);
+    
+    let session = db.getGymCoopSession();
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+
+    // Si ya hay una sesión activa o en espera de hoy, permitir unirse
+    if (session && session.date === todayStr && session.status !== 'completed') {
+      session.ready[actor] = true;
+      if (session.ready.Ismael && session.ready.Sandra) {
+        session.status = 'active';
+        if (!session.startTime) {
+          session.startTime = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        }
+      }
+      session.updatedAt = new Date().toISOString();
+      db.setGymCoopSession(session);
+      return res.json({ coopSession: session });
+    }
+
+    // Crear nueva sesión en espera (Lobby)
+    session = {
+      id: 'coop-' + Date.now(),
+      date: todayStr,
+      dayId: dayId || 'dia-1',
+      routineName: routineName || '🔥 Entrenamiento en Pareja Co-Op',
+      status: 'waiting',
+      initiatedBy: actor,
+      ready: {
+        Ismael: actor === 'Ismael',
+        Sandra: actor === 'Sandra'
+      },
+      activeTurnUser: actor,
+      restingUser: partner,
+      currentExerciseIndex: 0,
+      currentSetNumber: 1,
+      exercises: Array.isArray(exercises) ? exercises : [],
+      startTime: null,
+      endTime: null,
+      durationMin: 0,
+      caloriesBurned: 0,
+      cheers: [],
+      updatedAt: new Date().toISOString()
+    };
+
+    db.setGymCoopSession(session);
+
+    // Enviar notificación push al compañero
+    sendPushNotification(
+      partner,
+      '🏋️ ¡Entrenar Juntos en Casita Gym!',
+      `${actor} te ha invitado a entrenar juntos hoy. ¡Abre la app y pulsa Aceptar para empezar!`
+    ).catch(() => {});
+
+    res.status(201).json({ coopSession: session });
+  } catch (error) {
+    console.error('[Coop Start Error]', error);
+    res.status(500).json({ error: 'Error al iniciar sesión en pareja' });
+  }
+});
+
+app.post('/api/gym/coop/confirm', (req, res) => {
+  try {
+    const { user } = req.body;
+    const session = db.getGymCoopSession();
+    if (!session) return res.status(404).json({ error: 'No hay sesión en pareja activa' });
+
+    session.ready[user || 'Ismael'] = true;
+    if (session.ready.Ismael && session.ready.Sandra) {
+      session.status = 'active';
+      if (!session.startTime) {
+        session.startTime = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      }
+    }
+    session.updatedAt = new Date().toISOString();
+    db.setGymCoopSession(session);
+    res.json({ coopSession: session });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al confirmar sesión' });
+  }
+});
+
+app.post('/api/gym/coop/turn', (req, res) => {
+  try {
+    const { user, exerciseIndex, setNumber, weightKg, reps } = req.body;
+    const session = db.getGymCoopSession();
+    if (!session) return res.status(404).json({ error: 'No hay sesión en pareja activa' });
+
+    const exIdx = exerciseIndex !== undefined ? exerciseIndex : session.currentExerciseIndex;
+    const ex = session.exercises[exIdx];
+    if (ex) {
+      if (!ex.progress) ex.progress = { Ismael: { setsCompleted: 0, logs: [] }, Sandra: { setsCompleted: 0, logs: [] } };
+      if (!ex.progress[user]) ex.progress[user] = { setsCompleted: 0, logs: [] };
+
+      ex.progress[user].setsCompleted = (ex.progress[user].setsCompleted || 0) + 1;
+      ex.progress[user].logs.push({
+        set: setNumber || session.currentSetNumber,
+        weightKg: Number(weightKg) || 0,
+        reps: reps || 10,
+        completedAt: new Date().toISOString()
+      });
+
+      const partner = getOtherUser(user);
+      const userSets = ex.progress[user].setsCompleted;
+      const partnerSets = (ex.progress[partner] && ex.progress[partner].setsCompleted) || 0;
+      const targetSets = ex.sets || 3;
+
+      // Intercambio de turnos
+      if (userSets > partnerSets) {
+        // Le toca al compañero hacer este mismo número de serie
+        session.activeTurnUser = partner;
+        session.restingUser = user;
+      } else {
+        // Ambos han hecho el mismo número de series
+        if (userSets >= targetSets && partnerSets >= targetSets) {
+          // Ambos han terminado todas las series de este ejercicio
+          ex.completed = true;
+          if (exIdx + 1 < session.exercises.length) {
+            // Siguiente ejercicio
+            session.currentExerciseIndex = exIdx + 1;
+            session.currentSetNumber = 1;
+            // Alternar quién empieza la siguiente máquina
+            session.activeTurnUser = session.initiatedBy === 'Ismael' ? (exIdx % 2 === 0 ? 'Sandra' : 'Ismael') : (exIdx % 2 === 0 ? 'Ismael' : 'Sandra');
+            session.restingUser = getOtherUser(session.activeTurnUser);
+          } else {
+            // ¡Han terminado todos los ejercicios!
+            session.status = 'completed';
+            session.endTime = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            
+            // Calcular duración aproximada
+            const dur = Math.max(30, session.exercises.length * 7);
+            session.durationMin = dur;
+            session.caloriesBurned = Math.round(dur * 7.5);
+
+            // Guardar automáticamente el entreno para ambos en db
+            const workoutObj = {
+              routineName: session.routineName,
+              durationMin: session.durationMin,
+              caloriesBurned: session.caloriesBurned,
+              feeling: '🔥 ¡Increíble en pareja!',
+              notes: 'Sesión Co-Op completada juntos en Casita Gym.',
+              exercises: session.exercises.map(e => ({
+                name: e.name,
+                machine: e.machine,
+                sets: e.sets || 3,
+                reps: e.userConfigs?.[user]?.reps || '12',
+                weightKg: e.userConfigs?.[user]?.weightKg || 20,
+                completed: true
+              }))
+            };
+            db.addGymWorkout({ ...workoutObj, user: 'Ismael' });
+            db.addGymWorkout({ ...workoutObj, user: 'Sandra' });
+          }
+        } else {
+          // Nueva serie de la misma máquina
+          session.currentSetNumber = Math.max(userSets, partnerSets) + 1;
+          session.activeTurnUser = partner;
+          session.restingUser = user;
+        }
+      }
+    }
+
+    session.updatedAt = new Date().toISOString();
+    db.setGymCoopSession(session);
+    res.json({ coopSession: session });
+  } catch (error) {
+    console.error('[Coop Turn Error]', error);
+    res.status(500).json({ error: 'Error al pasar turno' });
+  }
+});
+
+app.post('/api/gym/coop/cheer', (req, res) => {
+  try {
+    const { from, cheerType, text } = req.body;
+    const session = db.getGymCoopSession();
+    if (!session) return res.status(404).json({ error: 'No hay sesión activa' });
+
+    if (!session.cheers) session.cheers = [];
+    session.cheers.push({
+      id: Date.now() + Math.random(),
+      from: from || 'Ismael',
+      to: getOtherUser(from || 'Ismael'),
+      cheerType: cheerType || 'fistbump',
+      text: text || '¡Vamos con todo! 🔥',
+      createdAt: Date.now()
+    });
+    if (session.cheers.length > 10) {
+      session.cheers = session.cheers.slice(-10);
+    }
+    session.updatedAt = new Date().toISOString();
+    db.setGymCoopSession(session);
+    res.json({ coopSession: session });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al enviar ánimo' });
+  }
+});
+
+app.post('/api/gym/coop/leave', (req, res) => {
+  try {
+    db.clearGymCoopSession();
+    res.json({ coopSession: null });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al salir de la sesión' });
+  }
+});
+
 app.post('/api/gym/analyze-cardio-screen', async (req, res) => {
   try {
     const { imageBase64 } = req.body;

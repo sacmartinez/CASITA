@@ -33,7 +33,8 @@ const defaultData = {
     Ismael: { targetDaysPerWeek: 3, targetWeightKg: null },
     Sandra: { targetDaysPerWeek: 3, targetWeightKg: null }
   },
-  gymCustomRoutines: []
+  gymCustomRoutines: [],
+  gymCoopSession: null
 };
 
 // Leer base de datos
@@ -89,6 +90,10 @@ function readDB() {
     }
     if (!data.gymCustomRoutines) {
       data.gymCustomRoutines = [];
+      changed = true;
+    }
+    if (data.gymCoopSession === undefined) {
+      data.gymCoopSession = null;
       changed = true;
     }
     if (changed) {
@@ -1161,7 +1166,8 @@ export const db = {
         Ismael: { ...defaultIsmael, ...(goals.Ismael || {}), goalType: (goals.Ismael && goals.Ismael.goalType) || 'brazos_abs_grasa', goalLabel: (goals.Ismael && goals.Ismael.goalLabel) || defaultIsmael.goalLabel },
         Sandra: { ...defaultSandra, ...(goals.Sandra || {}) }
       },
-      customRoutines: data.gymCustomRoutines || []
+      customRoutines: data.gymCustomRoutines || [],
+      coopSession: data.gymCoopSession || null
     };
   },
   saveGymInProgress: (user, date, stateObj) => {
@@ -1366,6 +1372,22 @@ export const db = {
     data.gymCustomRoutines = data.gymCustomRoutines.filter(r => r.id !== id);
     writeDB(data);
     return data.gymCustomRoutines;
+  },
+  getGymCoopSession: () => {
+    const data = readDB();
+    return data.gymCoopSession || null;
+  },
+  setGymCoopSession: (session) => {
+    const data = readDB();
+    data.gymCoopSession = session;
+    writeDB(data);
+    return data.gymCoopSession;
+  },
+  clearGymCoopSession: () => {
+    const data = readDB();
+    data.gymCoopSession = null;
+    writeDB(data);
+    return null;
   },
   addGymMeal: (meal) => {
     const data = readDB();

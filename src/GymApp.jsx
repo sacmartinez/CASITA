@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ExerciseVisualModal from './components/ExerciseVisualModal';
 import GymSocialShareModal from './components/GymSocialShareModal';
+import GymCoopArena from './components/GymCoopArena';
 
 const GOAL_OPTIONS = [
   {
@@ -629,6 +630,8 @@ function GymApp({ onBackToCasita }) {
   const hasAutoPositionedRef = useRef(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareWorkoutData, setShareWorkoutData] = useState(null);
+  const [coopSession, setCoopSession] = useState(null);
+  const [showWorkoutTypeModal, setShowWorkoutTypeModal] = useState(false);
 
   const [workoutStartTime, setWorkoutStartTime] = useState(() => {
     try {
@@ -654,37 +657,85 @@ function GymApp({ onBackToCasita }) {
     return false;
   });
 
-  // Al cambiar de día o usuario, permitir volver a buscar el primer ejercicio a medias
-  useEffect(() => {
-    hasAutoPositionedRef.current = false;
-  }, [selectedDayIdx, activeUser]);
-
-  // Si ya hay ejercicios completados, saltar automáticamente al primero que esté a medias/pendiente
-  useEffect(() => {
-    if (todayExercises && todayExercises.length > 0 && !hasAutoPositionedRef.current) {
-      const firstIncompleteIdx = todayExercises.findIndex(ex => !ex.completed);
-      if (firstIncompleteIdx !== -1) {
-        setCurrentExerciseStep(firstIncompleteIdx);
-      } else {
-        setCurrentExerciseStep(Math.max(0, todayExercises.length - 1));
+  // Consultar y sincronizar sesión Co-Op periódicamente
+  const fetchCoopSession = async () => {
+    try {
+      const res = await fetch('/api/gym/coop');
+      if (res.ok) {
+        const data = await res.json();
+        setCoopSession(data.coopSession || null);
       }
-      hasAutoPositionedRef.current = true;
-    }
-  }, [todayExercises, selectedDayIdx, activeUser]);
+    } catch (_) {}
+  };
 
-  // Detectar inicio si ya se marca algún ejercicio
   useEffect(() => {
-    if (todayExercises.some(ex => ex.completed) && !isWorkoutStarted) {
-      setIsWorkoutStarted(true);
-      if (!workoutStartTime) {
-        const nowStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-        setWorkoutStartTime(nowStr);
-        setWorkoutStartTimestamp(Date.now());
-      }
-    }
-  }, [todayExercises, isWorkoutStarted, workoutStartTime]);
+    fetchCoopSession();
+    const interval = setInterval(fetchCoopSession, 2500);
+    return () => clearInterval(interval);
+  }, []);
 
-  const handleStartWorkout = () => {
+  // Función para fusionar las rutinas del día de Ismael y Sandra en una rutina Co-Op compartida
+  const buildCoopRoutineForDay = (dayPlan) => {
+    const ismaelPlan = GYM_DAYS_ISMAEL.find(d => d.id === dayPlan.id) || GYM_DAYS_ISMAEL[0];
+    const sandraPlan = GYM_DAYS_SANDRA.find(d => d.id === dayPlan.id) || GYM_DAYS_SANDRA[0];
+
+    const merged = [];
+    const seenMachines = new Set();
+
+    (ismaelPlan.exercises || []).forEach((ex, idx) => {
+      const sMatch = (sandraPlan.exercises || []).find(se =>
+        se.machine.toLowerCase() === ex.machine.toLowerCase() ||
+        se.name.toLowerCase().includes(ex.name.toLowerCase().split(' ')[0])
+      );
+      seenMachines.add(ex.machine.toLowerCase());
+      merged.push({
+        id: `coop-m-${idx}`,
+        name: ex.name,
+        machine: ex.machine,
+        sets: Math.max(Number(ex.sets) || 3, Number(sMatch?.sets) || 3),
+        tip: ex.tip || sMatch?.tip || 'Coordinad los descansos para no enfriaros.',
+        isCardio: !!ex.isCardio,
+        userConfigs: {
+          Ismael: {
+            weightKg: ex.baseKg?.Ismael ?? 30,
+            reps: ex.baseReps ?? 12
+          },
+          Sandra: {
+            weightKg: sMatch?.baseKg?.Sandra ?? ex.baseKg?.Sandra ?? 15,
+            reps: sMatch?.baseReps ?? ex.baseReps ?? 12
+          }
+        }
+      });
+    });
+
+    (sandraPlan.exercises || []).forEach((se, idx) => {
+      if (!seenMachines.has(se.machine.toLowerCase())) {
+        seenMachines.add(se.machine.toLowerCase());
+        merged.push({
+          id: `coop-s-${idx}`,
+          name: se.name,
+          machine: se.machine,
+          sets: Number(se.sets) || 3,
+          tip: se.tip || 'Ajustad el peso en cada turno.',
+          isCardio: !!se.isCardio,
+          userConfigs: {
+            Ismael: {
+              weightKg: se.baseKg?.Ismael ?? 30,
+              reps: se.baseReps ?? 12
+            },
+            Sandra: {
+              weightKg: se.baseKg?.Sandra ?? 15,
+              reps: se.baseReps ?? 12
+            }
+          }
+        });
+      }
+    });
+
+    return merged;
+  };
+
+  const proceedStartWorkoutSolo = () => {
     const nowStr = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     const nowTs = Date.now();
     setWorkoutStartTime(nowStr);
@@ -696,6 +747,34 @@ function GymApp({ onBackToCasita }) {
         JSON.stringify({ startTime: nowStr, startTimestamp: nowTs, active: true })
       );
     } catch (_) {}
+  };
+
+  const handleStartWorkout = () => {
+    setShowWorkoutTypeModal(true);
+  };
+
+  const handleStartCoopWorkout = async () => {
+    try {
+      const dayPlan = activeGymDays[selectedDayIdx] || activeGymDays[0];
+      const mergedExercises = buildCoopRoutineForDay(dayPlan);
+      const res = await fetch('/api/gym/coop/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user: activeUser,
+          dayId: dayPlan.id,
+          routineName: `🔥 ${dayPlan.shortTab || 'Entrenamiento'} Co-Op`,
+          exercises: mergedExercises
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCoopSession(data.coopSession);
+        setShowWorkoutTypeModal(false);
+      }
+    } catch (e) {
+      console.error('Error starting coop:', e);
+    }
   };
 
   // Estado de Pestaña 2: EN CASA (Salón / Despacho) — Guardado persistente por rutina
@@ -803,6 +882,7 @@ function GymApp({ onBackToCasita }) {
         setWaterLogs(data.waterLogs || {});
         if (data.inProgress) setServerInProgress(data.inProgress);
         if (data.goals) setGoals(data.goals);
+        if (data.coopSession !== undefined) setCoopSession(data.coopSession);
       }
     } catch (e) {
       console.error('Error cargando Casita Gym:', e);
@@ -2313,8 +2393,100 @@ function GymApp({ onBackToCasita }) {
                   )}
                 </div>
               </div>
+            ) : coopSession && (coopSession.status === 'active' || coopSession.status === 'completed' || (coopSession.status === 'waiting' && coopSession.ready?.[activeUser])) ? (
+              <GymCoopArena
+                activeUser={activeUser}
+                coopSession={coopSession}
+                onRefreshSession={fetchCoopSession}
+                onOpenShareModal={(duoData) => {
+                  setShareWorkoutData(duoData);
+                  setShowShareModal(true);
+                }}
+                onExitCoop={() => {
+                  setCoopSession(null);
+                  fetchGymData();
+                }}
+              />
             ) : (
               <>
+                {/* Banner de invitación entrante de la pareja si está esperando */}
+                {coopSession && coopSession.status === 'waiting' && !coopSession.ready?.[activeUser] && (
+                  <div style={{
+                    padding: '1.1rem',
+                    borderRadius: '18px',
+                    background: 'linear-gradient(135deg, #db2777 0%, #9333ea 100%)',
+                    color: '#ffffff',
+                    boxShadow: '0 8px 25px rgba(219, 39, 119, 0.45)',
+                    marginBottom: '1rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.65rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <span style={{ fontSize: '2rem' }}>👫</span>
+                      <div>
+                        <div style={{ fontWeight: 900, fontSize: '1.05rem' }}>
+                          ¡{coopSession.initiatedBy} te ha invitado a Entrenar Juntos!
+                        </div>
+                        <div style={{ fontSize: '0.8rem', opacity: 0.92 }}>
+                          {coopSession.routineName} · Mismas máquinas y turnos de descanso
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await fetch('/api/gym/coop/confirm', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ user: activeUser })
+                          });
+                          fetchCoopSession();
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '0.8rem',
+                          borderRadius: '12px',
+                          border: 'none',
+                          background: '#ffffff',
+                          color: '#db2777',
+                          fontWeight: 900,
+                          fontSize: '0.95rem',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                        }}
+                      >
+                        ✅ ¡Aceptar y Empezar Juntos!
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await fetch('/api/gym/coop/leave', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ user: activeUser })
+                          });
+                          fetchCoopSession();
+                        }}
+                        style={{
+                          padding: '0.8rem 1rem',
+                          borderRadius: '12px',
+                          border: '1px solid rgba(255,255,255,0.3)',
+                          background: 'transparent',
+                          color: '#ffffff',
+                          fontWeight: 700,
+                          fontSize: '0.82rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Ahora no
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Selector de los 4 Días de Gimnasio (Se selecciona solo el que te toca hoy) */}
                 <div style={S.card}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem', flexWrap: 'wrap', gap: '0.4rem' }}>
@@ -4129,6 +4301,110 @@ function GymApp({ onBackToCasita }) {
         workoutData={shareWorkoutData}
         userName={activeUser}
       />
+
+      {/* MODAL DE SELECCIÓN: ¿ENTRENAR SOLO O EN PAREJA? */}
+      {showWorkoutTypeModal && (
+        <div className="modal-overlay" onClick={() => setShowWorkoutTypeModal(false)} style={{ zIndex: 120 }}>
+          <div
+            className="modal-content glass-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '440px',
+              width: '92%',
+              padding: '1.4rem',
+              borderRadius: '22px',
+              background: '#0f172a',
+              border: '1.5px solid rgba(16, 185, 129, 0.4)',
+              color: '#ffffff',
+              textAlign: 'center',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.7)'
+            }}
+          >
+            <div style={{ fontSize: '2.8rem', marginBottom: '0.2rem' }}>🏋️</div>
+            <h3 style={{ margin: '0 0 0.35rem 0', fontSize: '1.25rem', fontWeight: 900 }}>
+              ¿Cómo vas a entrenar hoy?
+            </h3>
+            <p style={{ margin: '0 0 1.2rem 0', fontSize: '0.84rem', color: '#94a3b8' }}>
+              Elige si entrenas por tu cuenta o si entrenáis juntos Ismael y Sandra compartiendo máquinas y turnos de descanso.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowWorkoutTypeModal(false);
+                  proceedStartWorkoutSolo();
+                }}
+                style={{
+                  padding: '1rem',
+                  borderRadius: '14px',
+                  border: '1.5px solid rgba(56, 189, 248, 0.35)',
+                  background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%)',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.8rem',
+                  textAlign: 'left'
+                }}
+              >
+                <span style={{ fontSize: '1.8rem' }}>👤</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.98rem' }}>Entrenar solo ({activeUser})</div>
+                  <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                    Tu rutina personal paso a paso con tus series y descansos individuales.
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowWorkoutTypeModal(false);
+                  handleStartCoopWorkout();
+                }}
+                style={{
+                  padding: '1rem',
+                  borderRadius: '14px',
+                  border: '2px solid #ec4899',
+                  background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.22) 0%, rgba(139, 92, 246, 0.22) 100%)',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.8rem',
+                  textAlign: 'left',
+                  boxShadow: '0 4px 20px rgba(236, 72, 153, 0.35)'
+                }}
+              >
+                <span style={{ fontSize: '1.8rem' }}>👫</span>
+                <div>
+                  <div style={{ fontWeight: 900, fontSize: '1rem', color: '#f472b6' }}>
+                    Entrenar juntos (Ismael & Sandra) ⚡
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#cbd5e1' }}>
+                    Modo juego interactivo: mismas máquinas, turnos alternos (uno entrena y otro descansa).
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowWorkoutTypeModal(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94a3b8',
+                fontSize: '0.82rem',
+                cursor: 'pointer'
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* BARRA INFERIOR ADAPTADA AL PERFIL (4 pestañas para Ismael con En Casa, 3 para Sandra solo Gym) */}
       <nav

@@ -103,11 +103,20 @@ export default function NotificationButton({ currentUser }) {
         throw new Error('No se pudo iniciar el servicio en segundo plano.');
       }
 
-      // 3. Obtener clave pública VAPID
-      const keyRes = await fetch('/api/push/vapid-public-key');
-      if (!keyRes.ok) throw new Error('Error al obtener la clave del servidor.');
-      const { publicKey } = await keyRes.json();
-      if (!publicKey) throw new Error('El servidor no devolvió una clave válida.');
+      // 3. Obtener clave pública VAPID (con reintento de ruta por si el host Serverless omite /api)
+      let keyRes = await fetch('/api/push/vapid-public-key');
+      if (!keyRes.ok) {
+        keyRes = await fetch('/push/vapid-public-key');
+      }
+      const keyRaw = await keyRes.text();
+      let keyData;
+      try {
+        keyData = JSON.parse(keyRaw);
+      } catch (_) {
+        throw new Error(`El servidor devolvió respuesta no válida (${keyRes.status})`);
+      }
+      const publicKey = keyData && keyData.publicKey;
+      if (!publicKey) throw new Error('El servidor no devolvió una clave VAPID válida.');
 
       // 4. Suscribir en el navegador
       let sub = await reg.pushManager.getSubscription();
@@ -120,7 +129,7 @@ export default function NotificationButton({ currentUser }) {
       }
 
       // 5. Registrar en MongoDB Atlas a través del backend
-      const subRes = await fetch('/api/push/subscribe', {
+      let subRes = await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -128,6 +137,16 @@ export default function NotificationButton({ currentUser }) {
           user: currentUser
         })
       });
+      if (!subRes.ok) {
+        subRes = await fetch('/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscription: sub,
+            user: currentUser
+          })
+        });
+      }
 
       if (!subRes.ok) throw new Error('Error al registrar la suscripción en la base de datos.');
 
@@ -173,12 +192,21 @@ export default function NotificationButton({ currentUser }) {
     setTestingPush(true);
     setStatusMessage('📨 Enviando aviso de prueba a tu móvil/PC...');
     try {
-      const res = await fetch('/api/push/test-user', {
+      let res = await fetch('/api/push/test-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user: currentUser })
       });
-      const data = await res.json();
+      if (!res.ok) {
+        res = await fetch('/push/test-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: currentUser })
+        });
+      }
+      const text = await res.text();
+      let data = {};
+      try { data = JSON.parse(text); } catch (_) {}
       if (res.ok) {
         setStatusMessage('🎉 ¡Aviso enviado! Mira la barra superior de tu dispositivo o el centro de notificaciones.');
       } else {

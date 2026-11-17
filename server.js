@@ -375,13 +375,13 @@ app.put('/api/planning/:dayId/complete-activity', async (req, res) => {
   }
 });
 
-// 5. SUSCRIPCIÓN DE NOTIFICACIONES PUSH
-app.get('/api/push/vapid-public-key', (req, res) => {
+// 5. SUSCRIPCIÓN DE NOTIFICACIONES PUSH (soporta tanto /api/push como /push en Vercel)
+app.get(['/api/push/vapid-public-key', '/push/vapid-public-key'], (req, res) => {
   if (!vapidKeys) vapidKeys = db.getVapidKeys();
   res.json({ publicKey: vapidKeys ? vapidKeys.publicKey : null });
 });
 
-app.post('/api/push/subscribe', (req, res) => {
+app.post(['/api/push/subscribe', '/push/subscribe'], (req, res) => {
   try {
     const { subscription, user } = req.body;
     if (!subscription || !user) {
@@ -394,7 +394,7 @@ app.post('/api/push/subscribe', (req, res) => {
   }
 });
 
-app.get('/api/push/status', (req, res) => {
+app.get(['/api/push/status', '/push/status'], (req, res) => {
   try {
     const user = req.query.user || 'Ismael';
     const subs = db.getSubscriptionsForUser(user);
@@ -408,7 +408,7 @@ app.get('/api/push/status', (req, res) => {
   }
 });
 
-app.post('/api/push/test-user', async (req, res) => {
+app.post(['/api/push/test-user', '/push/test-user'], async (req, res) => {
   try {
     const { user } = req.body;
     const targetUser = user || 'Ismael';
@@ -2282,6 +2282,10 @@ if (fs.existsSync(distPath)) {
     }
   }));
   app.use((req, res) => {
+    // Si la petición es para una ruta de API que no existe, responder 404 JSON, ¡NUNCA HTML!
+    if (req.url.startsWith('/api') || req.url.startsWith('/push') || (req.path && req.path.startsWith('/api'))) {
+      return res.status(404).json({ error: `Ruta API no encontrada: ${req.method} ${req.url}` });
+    }
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.sendFile(path.join(distPath, 'index.html'));
   });

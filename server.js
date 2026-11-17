@@ -377,7 +377,8 @@ app.put('/api/planning/:dayId/complete-activity', async (req, res) => {
 
 // 5. SUSCRIPCIÓN DE NOTIFICACIONES PUSH
 app.get('/api/push/vapid-public-key', (req, res) => {
-  res.json({ publicKey: vapidKeys.publicKey });
+  if (!vapidKeys) vapidKeys = db.getVapidKeys();
+  res.json({ publicKey: vapidKeys ? vapidKeys.publicKey : null });
 });
 
 app.post('/api/push/subscribe', (req, res) => {
@@ -390,6 +391,36 @@ app.post('/api/push/subscribe', (req, res) => {
     res.status(201).json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Error al registrar suscripción push' });
+  }
+});
+
+app.get('/api/push/status', (req, res) => {
+  try {
+    const user = req.query.user || 'Ismael';
+    const subs = db.getSubscriptionsForUser(user);
+    res.json({
+      user,
+      hasSubscription: subs.length > 0,
+      count: subs.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al consultar estado de push' });
+  }
+});
+
+app.post('/api/push/test-user', async (req, res) => {
+  try {
+    const { user } = req.body;
+    const targetUser = user || 'Ismael';
+    await sendPushNotification(
+      targetUser,
+      '🔔 Notificación de Prueba · Casita Hub',
+      `¡Funciona perfecto 24/7 en Vercel! Dispositivo conectado para ${targetUser} 🏠✨`,
+      '/'
+    );
+    res.json({ success: true, message: `Notificación de prueba enviada con éxito a ${targetUser}` });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al enviar notificación de prueba' });
   }
 });
 

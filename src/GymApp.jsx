@@ -619,6 +619,8 @@ function GymApp({ onBackToCasita }) {
   const [editingCompletedToday, setEditingCompletedToday] = useState(false);
   const [analyzingCardioIdx, setAnalyzingCardioIdx] = useState(null);
   const [autoSaveFlash, setAutoSaveFlash] = useState('');
+  const [stepByStepMode, setStepByStepMode] = useState(true);
+  const [currentExerciseStep, setCurrentExerciseStep] = useState(0);
 
   const todayDateStr = getMadridDateStr(0);
 
@@ -2311,389 +2313,583 @@ function GymApp({ onBackToCasita }) {
                   </div>
                 </div>
 
-                {/* LISTA PASO A PASO DE LAS MÁQUINAS DE HOY */}
-                <form onSubmit={handleSaveTodayGym} style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
-                  {/* Barra rápida de progreso y botón de validación inmediata */}
+                {/* INTERFAZ PASO A PASO (STEP-BY-STEP) O LISTA COMPLETA */}
+                <form onSubmit={handleSaveTodayGym} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                  {/* Selector de modo y barra de progreso */}
                   <div style={{
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
+                    flexDirection: 'column',
+                    gap: '0.6rem',
                     background: '#f8fafc',
                     border: '1px solid #cbd5e1',
-                    borderRadius: '12px',
-                    padding: '0.65rem 0.9rem',
-                    flexWrap: 'wrap',
-                    gap: '0.5rem'
+                    borderRadius: '16px',
+                    padding: '0.85rem 1rem'
                   }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#334155' }}>
-                      📋 Progreso de hoy:{' '}
-                      <span style={{ color: '#059669' }}>
-                        {todayExercises.filter(e => e.completed).length} de {todayExercises.length} máquinas marcadas
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#1e293b' }}>
+                        🎯 {stepByStepMode ? `Paso ${currentExerciseStep + 1} de ${todayExercises.length}` : 'Lista Completa de Ejercicios'}:{' '}
+                        <span style={{ color: '#059669' }}>
+                          {todayExercises.filter(e => e.completed).length} de {todayExercises.length} completados
+                        </span>
+                      </div>
+
+                      {/* Conmutador entre Modo Paso a Paso y Modo Lista */}
+                      <button
+                        type="button"
+                        onClick={() => setStepByStepMode(prev => !prev)}
+                        style={{
+                          background: stepByStepMode ? '#eff6ff' : '#f1f5f9',
+                          border: stepByStepMode ? '1px solid #3b82f6' : '1px solid #cbd5e1',
+                          color: stepByStepMode ? '#1d4ed8' : '#475569',
+                          borderRadius: '8px',
+                          padding: '0.35rem 0.75rem',
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem'
+                        }}
+                      >
+                        <span>{stepByStepMode ? '📋 Ver Lista Completa' : '🎯 Modo Paso a Paso'}</span>
+                      </button>
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={savingGym}
-                      style={{
-                        background: '#059669',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        padding: '0.45rem 0.85rem',
-                        fontSize: '0.78rem',
-                        fontWeight: 800,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {savingGym ? 'Guardando...' : '✅ Validar y Guardar Sesión'}
-                    </button>
-                  </div>
-
-                  {todayExercises.map((ex, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        ...S.card,
-                        padding: '0.9rem',
-                        border: ex.completed ? '2px solid #10b981' : '1px solid #cbd5e1',
-                        background: ex.completed ? '#ffffff' : '#f8fafc'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <span style={{
-                              background: ex.completed ? '#059669' : '#0f172a',
-                              color: '#ffffff',
-                              borderRadius: '6px',
-                              padding: '0.1rem 0.45rem',
-                              fontSize: '0.74rem',
-                              fontWeight: 800
-                            }}>
-                              {ex.completed ? `✓ Paso ${idx + 1} Guardado` : `Paso ${idx + 1}`}
-                            </span>
-                            <strong style={{ fontSize: '0.96rem', color: '#0f172a' }}>{ex.name}</strong>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', marginTop: '0.28rem' }}>
-                            <span style={{ fontSize: '0.74rem', color: '#2563eb', fontWeight: 700 }}>
-                              📍 {ex.machine} · <strong>{ex.sets} {ex.sets === 1 ? 'bloque' : 'series'}</strong>
-                            </span>
-
-                            {/* Botón para ver Imagen Explicativa Paso 1 y Paso 2 del ejercicio */}
-                            <button
-                              type="button"
-                              onClick={() => setVisualModalItem({ name: ex.name, machine: ex.machine })}
-                              style={{
-                                background: '#eff6ff',
-                                border: '1px solid #93c5fd',
-                                color: '#1d4ed8',
-                                borderRadius: '999px',
-                                padding: '0.18rem 0.65rem',
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.25rem'
-                              }}
-                            >
-                              📸 Imagen cómo se hace
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Botón grande de Hecho / Pendiente (Guarda al instante) */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const copy = [...todayExercises];
-                            copy[idx] = { ...copy[idx], completed: !copy[idx].completed };
-                            saveDraftImmediately(copy);
-                          }}
-                          style={{
-                            background: ex.completed ? '#10b981' : '#e2e8f0',
-                            color: ex.completed ? '#ffffff' : '#334155',
-                            border: ex.completed ? '1px solid #059669' : '1px solid #cbd5e1',
-                            borderRadius: '10px',
-                            padding: '0.45rem 0.75rem',
-                            fontSize: '0.76rem',
-                            fontWeight: 900,
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          {ex.completed ? '✓ Hecho' : 'Marcar Hecho'}
-                        </button>
-                      </div>
-
-                      {/* Etiqueta de Auto-Progresión del Entrenador Adán */}
+                    {/* Barra de progreso visual continua */}
+                    <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden' }}>
                       <div style={{
-                        marginTop: '0.5rem',
-                        padding: '0.4rem 0.6rem',
-                        borderRadius: '8px',
-                        background: ex.isUpgraded ? '#ecfdf5' : '#f1f5f9',
-                        color: ex.isUpgraded ? '#047857' : '#334155',
-                        fontSize: '0.75rem',
-                        fontWeight: 700
-                      }}>
-                        {ex.badge}
-                      </div>
+                        width: `${todayExercises.length > 0 ? (todayExercises.filter(e => e.completed).length / todayExercises.length) * 100 : 0}%`,
+                        height: '100%',
+                        background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)',
+                        borderRadius: '999px',
+                        transition: 'width 0.3s ease'
+                      }} />
+                    </div>
 
-                      <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.35rem' }}>
-                        💡 {ex.tip}
-                      </div>
-
-                      {/* Controles rápidos y grandes para anotar el peso y las repeticiones de hoy */}
+                    {/* Fila de pasos interactiva (círculos 1, 2, 3...) */}
+                    {stepByStepMode && todayExercises.length > 0 && (
                       <div style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.6rem',
-                        marginTop: '0.65rem',
-                        paddingTop: '0.6rem',
-                        borderTop: '1px solid #f1f5f9',
-                        flexWrap: 'wrap'
+                        gap: '0.35rem',
+                        overflowX: 'auto',
+                        paddingBottom: '0.2rem',
+                        scrollbarWidth: 'none'
                       }}>
-                        {!ex.isCardio && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#334155' }}>Peso hoy:</span>
+                        {todayExercises.map((ex, idx) => {
+                          const isCurrent = idx === currentExerciseStep;
+                          const isDone = ex.completed;
+                          return (
                             <button
                               type="button"
-                              onClick={() => {
-                                const copy = [...todayExercises];
-                                copy[idx] = {
-                                  ...copy[idx],
-                                  weightKg: Math.max(0, (Number(copy[idx].weightKg) || 0) - 2.5),
-                                  completed: true
-                                };
-                                saveDraftImmediately(copy);
+                              key={idx}
+                              onClick={() => setCurrentExerciseStep(idx)}
+                              style={{
+                                flex: '0 0 auto',
+                                minWidth: '32px',
+                                height: '32px',
+                                padding: '0 6px',
+                                borderRadius: '10px',
+                                border: isCurrent ? '2px solid #2563eb' : isDone ? '1px solid #059669' : '1px solid #cbd5e1',
+                                background: isCurrent ? '#dbeafe' : isDone ? '#10b981' : '#ffffff',
+                                color: isCurrent ? '#1d4ed8' : isDone ? '#ffffff' : '#64748b',
+                                fontWeight: 800,
+                                fontSize: '0.74rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '2px',
+                                boxShadow: isCurrent ? '0 0 8px rgba(37, 99, 235, 0.4)' : 'none',
+                                transition: 'all 0.15s ease'
                               }}
-                              style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: 900, cursor: 'pointer' }}
+                              title={`Paso ${idx + 1}: ${ex.name}`}
                             >
-                              -
+                              <span>{isDone ? '✓' : idx + 1}</span>
                             </button>
-                            <input
-                              type="number"
-                              step="0.5"
-                              value={ex.weightKg}
-                              onChange={(e) => {
-                                const copy = [...todayExercises];
-                                copy[idx] = { ...copy[idx], weightKg: e.target.value };
-                                saveDraftImmediately(copy);
-                              }}
-                              style={{ ...S.input, width: '64px', textAlign: 'center', fontWeight: 800, padding: '0.35rem' }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const copy = [...todayExercises];
-                                copy[idx] = {
-                                  ...copy[idx],
-                                  weightKg: (Number(copy[idx].weightKg) || 0) + 2.5,
-                                  completed: true
-                                };
-                                saveDraftImmediately(copy);
-                              }}
-                              style={{ width: '30px', height: '30px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: 900, cursor: 'pointer' }}
-                            >
-                              +
-                            </button>
-                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#059669' }}>kg</span>
-                          </div>
-                        )}
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#334155' }}>
-                            {ex.isCardio ? 'Tiempo:' : 'Repeticiones:'}
-                          </span>
-                          <input
-                            type="text"
-                            value={ex.reps}
-                            onChange={(e) => {
-                              const copy = [...todayExercises];
-                              copy[idx] = { ...copy[idx], reps: e.target.value };
-                              saveDraftImmediately(copy);
-                            }}
-                            style={{ ...S.input, width: '88px', textAlign: 'center', fontWeight: 800, padding: '0.35rem' }}
-                          />
-                        </div>
+                          );
+                        })}
                       </div>
+                    )}
+                  </div>
 
-                      {/* PANEL ESPECIAL DE PANTALLA DE CARDIO (Distancia, Calorías, Nivel Máx, Pulso y Foto IA) */}
-                      {ex.hasCardioScreen && (
+                  {/* Renderizado: O bien un solo ejercicio (Paso a Paso) o la lista entera */}
+                  {(stepByStepMode
+                    ? todayExercises.slice(currentExerciseStep, currentExerciseStep + 1)
+                    : todayExercises
+                  ).map((ex, relativeIdx) => {
+                    const idx = stepByStepMode ? currentExerciseStep : relativeIdx;
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          ...S.card,
+                          padding: '1.1rem',
+                          border: ex.completed ? '2px solid #10b981' : '2px solid #3b82f6',
+                          background: ex.completed ? '#ffffff' : '#f8fafc',
+                          boxShadow: stepByStepMode ? '0 10px 25px rgba(0,0,0,0.06)' : undefined
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              <span style={{
+                                background: ex.completed ? '#059669' : '#0f172a',
+                                color: '#ffffff',
+                                borderRadius: '6px',
+                                padding: '0.15rem 0.55rem',
+                                fontSize: '0.76rem',
+                                fontWeight: 800
+                              }}>
+                                {ex.completed ? `✓ Paso ${idx + 1} de ${todayExercises.length} Completado` : `Paso ${idx + 1} de ${todayExercises.length}`}
+                              </span>
+                              <strong style={{ fontSize: stepByStepMode ? '1.15rem' : '0.96rem', color: '#0f172a' }}>
+                                {ex.name}
+                              </strong>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                              <span style={{ fontSize: '0.78rem', color: '#2563eb', fontWeight: 700 }}>
+                                📍 {ex.machine} · <strong>{ex.sets} {ex.sets === 1 ? 'bloque' : 'series'}</strong>
+                              </span>
+
+                              {/* Botón para ver Imagen Explicativa Paso 1 y Paso 2 del ejercicio */}
+                              <button
+                                type="button"
+                                onClick={() => setVisualModalItem({ name: ex.name, machine: ex.machine })}
+                                style={{
+                                  background: '#eff6ff',
+                                  border: '1px solid #93c5fd',
+                                  color: '#1d4ed8',
+                                  borderRadius: '999px',
+                                  padding: '0.2rem 0.75rem',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}
+                              >
+                                📸 Ver cómo se hace
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Botón de estado Hecho / Pendiente si estamos en modo lista */}
+                          {!stepByStepMode && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const copy = [...todayExercises];
+                                copy[idx] = { ...copy[idx], completed: !copy[idx].completed };
+                                saveDraftImmediately(copy);
+                              }}
+                              style={{
+                                background: ex.completed ? '#10b981' : '#e2e8f0',
+                                color: ex.completed ? '#ffffff' : '#334155',
+                                border: ex.completed ? '1px solid #059669' : '1px solid #cbd5e1',
+                                borderRadius: '10px',
+                                padding: '0.45rem 0.75rem',
+                                fontSize: '0.76rem',
+                                fontWeight: 900,
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              {ex.completed ? '✓ Hecho' : 'Marcar Hecho'}
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Etiqueta de Auto-Progresión del Entrenador Adán */}
                         <div style={{
                           marginTop: '0.65rem',
-                          padding: '0.75rem',
-                          borderRadius: '12px',
-                          background: 'linear-gradient(135deg, #f0f9ff 0%, #ecfdf5 100%)',
-                          border: '1px solid #bae6fd'
+                          padding: '0.45rem 0.7rem',
+                          borderRadius: '8px',
+                          background: ex.isUpgraded ? '#ecfdf5' : '#f1f5f9',
+                          color: ex.isUpgraded ? '#047857' : '#334155',
+                          fontSize: '0.76rem',
+                          fontWeight: 700
                         }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.55rem' }}>
-                            <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#0369a1' }}>
-                              📟 Datos de la Pantalla de Cardio (Gimnasio Marbella)
-                            </div>
-
-                            <label style={{
-                              background: '#0284c7',
-                              color: '#ffffff',
-                              borderRadius: '999px',
-                              padding: '0.28rem 0.7rem',
-                              fontSize: '0.72rem',
-                              fontWeight: 800,
-                              cursor: analyzingCardioIdx === idx ? 'wait' : 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '0.3rem',
-                              boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)'
-                            }}>
-                              {analyzingCardioIdx === idx ? '⏳ Leyendo pantalla...' : '📸 Subir foto pantalla Cardio (IA)'}
-                              <input
-                                type="file"
-                                accept="image/*"
-                                style={{ display: 'none' }}
-                                disabled={analyzingCardioIdx === idx}
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0];
-                                  if (f) handleAnalyzeCardioPhoto(idx, f);
-                                  e.target.value = '';
-                                }}
-                              />
-                            </label>
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '0.45rem' }}>
-                            <div>
-                              <label style={{ fontSize: '0.66rem', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '0.15rem' }}>
-                                🛣️ Distancia (Km)
-                              </label>
-                              <input
-                                type="number"
-                                step="0.01"
-                                placeholder="Ej: 3.28"
-                                value={ex.distanceKm ?? ''}
-                                onChange={(e) => {
-                                  const copy = [...todayExercises];
-                                  copy[idx] = { ...copy[idx], distanceKm: e.target.value, completed: true };
-                                  saveDraftImmediately(copy);
-                                }}
-                                style={{ ...S.input, width: '100%', padding: '0.35rem 0.45rem', fontWeight: 800, fontSize: '0.82rem' }}
-                              />
-                            </div>
-
-                            <div>
-                              <label style={{ fontSize: '0.66rem', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '0.15rem' }}>
-                                🔥 Calorías (kcal)
-                              </label>
-                              <input
-                                type="number"
-                                step="0.1"
-                                placeholder="Ej: 115.2"
-                                value={ex.caloriesKcal ?? ''}
-                                onChange={(e) => {
-                                  const copy = [...todayExercises];
-                                  copy[idx] = { ...copy[idx], caloriesKcal: e.target.value, completed: true };
-                                  saveDraftImmediately(copy);
-                                }}
-                                style={{ ...S.input, width: '100%', padding: '0.35rem 0.45rem', fontWeight: 800, fontSize: '0.82rem' }}
-                              />
-                            </div>
-
-                            <div>
-                              <label style={{ fontSize: '0.66rem', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '0.15rem' }}>
-                                ⚙️ Nivel Máx
-                              </label>
-                              <input
-                                type="number"
-                                step="1"
-                                placeholder="Ej: 6"
-                                value={ex.levelMax ?? ''}
-                                onChange={(e) => {
-                                  const copy = [...todayExercises];
-                                  copy[idx] = { ...copy[idx], levelMax: e.target.value, completed: true };
-                                  saveDraftImmediately(copy);
-                                }}
-                                style={{ ...S.input, width: '100%', padding: '0.35rem 0.45rem', fontWeight: 800, fontSize: '0.82rem' }}
-                              />
-                            </div>
-
-                            <div>
-                              <label style={{ fontSize: '0.66rem', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '0.15rem' }}>
-                                ❤️ Pulso medio
-                              </label>
-                              <input
-                                type="number"
-                                step="1"
-                                placeholder="Ej: 107"
-                                value={ex.avgPulse ?? ''}
-                                onChange={(e) => {
-                                  const copy = [...todayExercises];
-                                  copy[idx] = { ...copy[idx], avgPulse: e.target.value, completed: true };
-                                  saveDraftImmediately(copy);
-                                }}
-                                style={{ ...S.input, width: '100%', padding: '0.35rem 0.45rem', fontWeight: 800, fontSize: '0.82rem' }}
-                              />
-                            </div>
-                          </div>
+                          {ex.badge}
                         </div>
-                      )}
 
-                      {/* CRONÓMETRO INTEGRADO EN LA FICHA SI EL EJERCICIO ES POR TIEMPO (Plancha, Cinta, Elíptica...) */}
-                      {parseExerciseDurationSeconds(ex.reps) && (
-                        <InlineExerciseTimer
-                          initialSeconds={parseExerciseDurationSeconds(ex.reps)}
-                          sets={ex.sets || 1}
-                          onComplete={() => {
-                            const copy = [...todayExercises];
-                            copy[idx] = { ...copy[idx], completed: true };
-                            saveDraftImmediately(copy);
-                          }}
-                        />
-                      )}
-
-                      {/* DECISIÓN AL TERMINAR ESTA MÁQUINA CONCRETA (MEJORAR, MANTENER O BAJAR) */}
-                      <div style={{
-                        marginTop: '0.65rem',
-                        paddingTop: '0.6rem',
-                        borderTop: '1px dashed #e2e8f0'
-                      }}>
-                        <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#475569', marginBottom: '0.35rem' }}>
-                          🧑‍🏫 Al acabar esta máquina, ¿qué hace Adán el próximo día aquí?
+                        <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '0.4rem', lineHeight: '1.4' }}>
+                          💡 {ex.tip}
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.35rem' }}>
-                          {[
-                            { id: 'mejorar', label: '🚀 Mejorar', sub: ex.hasCardioScreen ? 'Subir Km/Nivel' : 'Subir peso/reps', activeBorder: '#059669', activeBg: '#ecfdf5', activeColor: '#047857' },
-                            { id: 'mantener', label: '⚖️ Mantener', sub: 'Seguir igual', activeBorder: '#2563eb', activeBg: '#eff6ff', activeColor: '#1d4ed8' },
-                            { id: 'bajar', label: '🌱 Bajar', sub: 'Costó mucho', activeBorder: '#d97706', activeBg: '#fffbeb', activeColor: '#b45309' }
-                          ].map(opt => {
-                            const isSel = (ex.nextAction || 'mantener') === opt.id;
-                            return (
+
+                        {/* Controles rápidos y grandes para anotar el peso y las repeticiones de hoy */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.8rem',
+                          marginTop: '0.85rem',
+                          paddingTop: '0.75rem',
+                          borderTop: '1px solid #f1f5f9',
+                          flexWrap: 'wrap'
+                        }}>
+                          {!ex.isCardio && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#334155' }}>Peso hoy:</span>
                               <button
-                                key={opt.id}
                                 type="button"
                                 onClick={() => {
                                   const copy = [...todayExercises];
-                                  copy[idx] = { ...copy[idx], nextAction: opt.id, completed: true };
+                                  copy[idx] = {
+                                    ...copy[idx],
+                                    weightKg: Math.max(0, (Number(copy[idx].weightKg) || 0) - 2.5),
+                                    completed: true
+                                  };
+                                  saveDraftImmediately(copy);
+                                }}
+                                style={{ width: '34px', height: '34px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: 900, fontSize: '1.1rem', cursor: 'pointer' }}
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                step="0.5"
+                                value={ex.weightKg}
+                                onChange={(e) => {
+                                  const copy = [...todayExercises];
+                                  copy[idx] = { ...copy[idx], weightKg: e.target.value };
+                                  saveDraftImmediately(copy);
+                                }}
+                                style={{ ...S.input, width: '68px', textAlign: 'center', fontWeight: 800, padding: '0.4rem' }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const copy = [...todayExercises];
+                                  copy[idx] = {
+                                    ...copy[idx],
+                                    weightKg: (Number(copy[idx].weightKg) || 0) + 2.5,
+                                    completed: true
+                                  };
+                                  saveDraftImmediately(copy);
+                                }}
+                                style={{ width: '34px', height: '34px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: 900, fontSize: '1.1rem', cursor: 'pointer' }}
+                              >
+                                +
+                              </button>
+                              <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#059669' }}>kg</span>
+                            </div>
+                          )}
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#334155' }}>
+                              {ex.isCardio ? 'Tiempo:' : 'Repeticiones:'}
+                            </span>
+                            <input
+                              type="text"
+                              value={ex.reps}
+                              onChange={(e) => {
+                                const copy = [...todayExercises];
+                                copy[idx] = { ...copy[idx], reps: e.target.value };
+                                saveDraftImmediately(copy);
+                              }}
+                              style={{ ...S.input, width: '95px', textAlign: 'center', fontWeight: 800, padding: '0.4rem' }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* PANEL ESPECIAL DE PANTALLA DE CARDIO (Distancia, Calorías, Nivel Máx, Pulso y Foto IA) */}
+                        {ex.hasCardioScreen && (
+                          <div style={{
+                            marginTop: '0.8rem',
+                            padding: '0.85rem',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(135deg, #f0f9ff 0%, #ecfdf5 100%)',
+                            border: '1px solid #bae6fd'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.65rem' }}>
+                              <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0369a1' }}>
+                                📟 Datos de la Pantalla de Cardio (Gimnasio Marbella)
+                              </div>
+
+                              <label style={{
+                                background: '#0284c7',
+                                color: '#ffffff',
+                                borderRadius: '999px',
+                                padding: '0.3rem 0.8rem',
+                                fontSize: '0.74rem',
+                                fontWeight: 800,
+                                cursor: analyzingCardioIdx === idx ? 'wait' : 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)'
+                              }}>
+                                {analyzingCardioIdx === idx ? '⏳ Leyendo pantalla...' : '📸 Subir foto pantalla Cardio (IA)'}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  style={{ display: 'none' }}
+                                  disabled={analyzingCardioIdx === idx}
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) handleAnalyzeCardioPhoto(idx, f);
+                                    e.target.value = '';
+                                  }}
+                                />
+                              </label>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '0.5rem' }}>
+                              <div>
+                                <label style={{ fontSize: '0.68rem', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '0.15rem' }}>
+                                  🛣️ Distancia (Km)
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  placeholder="Ej: 3.28"
+                                  value={ex.distanceKm ?? ''}
+                                  onChange={(e) => {
+                                    const copy = [...todayExercises];
+                                    copy[idx] = { ...copy[idx], distanceKm: e.target.value, completed: true };
+                                    saveDraftImmediately(copy);
+                                  }}
+                                  style={{ ...S.input, width: '100%', padding: '0.35rem 0.45rem', fontWeight: 800, fontSize: '0.82rem' }}
+                                />
+                              </div>
+
+                              <div>
+                                <label style={{ fontSize: '0.68rem', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '0.15rem' }}>
+                                  🔥 Calorías (kcal)
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  placeholder="Ej: 115.2"
+                                  value={ex.caloriesKcal ?? ''}
+                                  onChange={(e) => {
+                                    const copy = [...todayExercises];
+                                    copy[idx] = { ...copy[idx], caloriesKcal: e.target.value, completed: true };
+                                    saveDraftImmediately(copy);
+                                  }}
+                                  style={{ ...S.input, width: '100%', padding: '0.35rem 0.45rem', fontWeight: 800, fontSize: '0.82rem' }}
+                                />
+                              </div>
+
+                              <div>
+                                <label style={{ fontSize: '0.68rem', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '0.15rem' }}>
+                                  ⚙️ Nivel Máx
+                                </label>
+                                <input
+                                  type="number"
+                                  step="1"
+                                  placeholder="Ej: 6"
+                                  value={ex.levelMax ?? ''}
+                                  onChange={(e) => {
+                                    const copy = [...todayExercises];
+                                    copy[idx] = { ...copy[idx], levelMax: e.target.value, completed: true };
+                                    saveDraftImmediately(copy);
+                                  }}
+                                  style={{ ...S.input, width: '100%', padding: '0.35rem 0.45rem', fontWeight: 800, fontSize: '0.82rem' }}
+                                />
+                              </div>
+
+                              <div>
+                                <label style={{ fontSize: '0.68rem', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '0.15rem' }}>
+                                  ❤️ Pulso medio
+                                </label>
+                                <input
+                                  type="number"
+                                  step="1"
+                                  placeholder="Ej: 107"
+                                  value={ex.avgPulse ?? ''}
+                                  onChange={(e) => {
+                                    const copy = [...todayExercises];
+                                    copy[idx] = { ...copy[idx], avgPulse: e.target.value, completed: true };
+                                    saveDraftImmediately(copy);
+                                  }}
+                                  style={{ ...S.input, width: '100%', padding: '0.35rem 0.45rem', fontWeight: 800, fontSize: '0.82rem' }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* CRONÓMETRO INTEGRADO EN LA FICHA SI EL EJERCICIO ES POR TIEMPO (Plancha, Cinta, Elíptica...) */}
+                        {parseExerciseDurationSeconds(ex.reps) && (
+                          <InlineExerciseTimer
+                            initialSeconds={parseExerciseDurationSeconds(ex.reps)}
+                            sets={ex.sets || 1}
+                            onComplete={() => {
+                              const copy = [...todayExercises];
+                              copy[idx] = { ...copy[idx], completed: true };
+                              saveDraftImmediately(copy);
+                            }}
+                          />
+                        )}
+
+                        {/* DECISIÓN AL TERMINAR ESTA MÁQUINA CONCRETA (MEJORAR, MANTENER O BAJAR) */}
+                        <div style={{
+                          marginTop: '0.8rem',
+                          paddingTop: '0.75rem',
+                          borderTop: '1px dashed #e2e8f0'
+                        }}>
+                          <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#475569', marginBottom: '0.4rem' }}>
+                            🧑‍🏫 Al acabar esta máquina, ¿qué hace Adán el próximo día aquí?
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+                            {[
+                              { id: 'mejorar', label: '🚀 Mejorar', sub: ex.hasCardioScreen ? 'Subir Km/Nivel' : 'Subir peso/reps', activeBorder: '#059669', activeBg: '#ecfdf5', activeColor: '#047857' },
+                              { id: 'mantener', label: '⚖️ Mantener', sub: 'Seguir igual', activeBorder: '#2563eb', activeBg: '#eff6ff', activeColor: '#1d4ed8' },
+                              { id: 'bajar', label: '🌱 Bajar', sub: 'Costó mucho', activeBorder: '#d97706', activeBg: '#fffbeb', activeColor: '#b45309' }
+                            ].map(opt => {
+                              const isSel = (ex.nextAction || 'mantener') === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const copy = [...todayExercises];
+                                    copy[idx] = { ...copy[idx], nextAction: opt.id, completed: true };
+                                    saveDraftImmediately(copy);
+                                  }}
+                                  style={{
+                                    padding: '0.45rem 0.3rem',
+                                    borderRadius: '10px',
+                                    border: isSel ? `2px solid ${opt.activeBorder}` : '1px solid #e2e8f0',
+                                    background: isSel ? opt.activeBg : '#f8fafc',
+                                    color: isSel ? opt.activeColor : '#475569',
+                                    cursor: 'pointer',
+                                    textAlign: 'center'
+                                  }}
+                                >
+                                  <div style={{ fontSize: '0.76rem', fontWeight: 800 }}>{opt.label}</div>
+                                  <div style={{ fontSize: '0.64rem', opacity: 0.85 }}>{opt.sub}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* BARRA DE NAVEGACIÓN CONTROLADA STEP-BY-STEP (Solo en modo paso a paso) */}
+                        {stepByStepMode && (
+                          <div style={{
+                            display: 'flex',
+                            gap: '0.6rem',
+                            marginTop: '1.2rem',
+                            paddingTop: '1rem',
+                            borderTop: '2px solid #e2e8f0',
+                            alignItems: 'center',
+                            flexWrap: 'wrap'
+                          }}>
+                            {/* Botón Anterior */}
+                            {currentExerciseStep > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCurrentExerciseStep(prev => Math.max(0, prev - 1));
+                                  window.scrollTo({ top: 320, behavior: 'smooth' });
+                                }}
+                                style={{
+                                  padding: '0.75rem 0.95rem',
+                                  borderRadius: '12px',
+                                  border: '1px solid #cbd5e1',
+                                  background: '#f8fafc',
+                                  color: '#334155',
+                                  fontWeight: 800,
+                                  fontSize: '0.82rem',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ← Anterior
+                              </button>
+                            )}
+
+                            {/* Botón Saltar Ejercicio */}
+                            {currentExerciseStep < todayExercises.length - 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCurrentExerciseStep(prev => prev + 1);
+                                  window.scrollTo({ top: 320, behavior: 'smooth' });
+                                }}
+                                style={{
+                                  padding: '0.75rem 0.95rem',
+                                  borderRadius: '12px',
+                                  border: '1px dashed #d97706',
+                                  background: '#fffbeb',
+                                  color: '#b45309',
+                                  fontWeight: 800,
+                                  fontSize: '0.82rem',
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap'
+                                }}
+                                title="Saltar al siguiente ejercicio sin marcar completado"
+                              >
+                                ⏭️ Saltar Ejercicio
+                              </button>
+                            )}
+
+                            {/* Botón Principal: Completar y Avanzar al siguiente paso */}
+                            {currentExerciseStep < todayExercises.length - 1 ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const copy = [...todayExercises];
+                                  copy[idx] = { ...copy[idx], completed: true };
+                                  saveDraftImmediately(copy);
+                                  setCurrentExerciseStep(prev => prev + 1);
+                                  if (timerSeconds === 0) {
+                                    startTimer(60);
+                                  }
+                                  window.scrollTo({ top: 320, behavior: 'smooth' });
+                                }}
+                                style={{
+                                  flex: 1,
+                                  minWidth: '160px',
+                                  padding: '0.85rem 1.2rem',
+                                  borderRadius: '12px',
+                                  border: 'none',
+                                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                  color: '#ffffff',
+                                  fontWeight: 900,
+                                  fontSize: '0.92rem',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '0.4rem'
+                                }}
+                              >
+                                <span>✅ Completar y Siguiente</span>
+                                <span style={{ fontSize: '1.1rem' }}>→</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const copy = [...todayExercises];
+                                  copy[idx] = { ...copy[idx], completed: true };
                                   saveDraftImmediately(copy);
                                 }}
                                 style={{
-                                  padding: '0.4rem 0.25rem',
-                                  borderRadius: '10px',
-                                  border: isSel ? `2px solid ${opt.activeBorder}` : '1px solid #e2e8f0',
-                                  background: isSel ? opt.activeBg : '#f8fafc',
-                                  color: isSel ? opt.activeColor : '#475569',
+                                  flex: 1,
+                                  minWidth: '160px',
+                                  padding: '0.85rem 1.2rem',
+                                  borderRadius: '12px',
+                                  border: 'none',
+                                  background: ex.completed ? '#059669' : '#10b981',
+                                  color: '#ffffff',
+                                  fontWeight: 900,
+                                  fontSize: '0.92rem',
                                   cursor: 'pointer',
-                                  textAlign: 'center'
+                                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
                                 }}
                               >
-                                <div style={{ fontSize: '0.74rem', fontWeight: 800 }}>{opt.label}</div>
-                                <div style={{ fontSize: '0.64rem', opacity: 0.85 }}>{opt.sub}</div>
+                                {ex.completed ? '✓ Último Ejercicio Completado' : '✅ Marcar Último Ejercicio'}
                               </button>
-                            );
-                          })}
-                        </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {/* Resumen y Botón Guardar Entreno de Hoy */}
                   <div style={S.card}>

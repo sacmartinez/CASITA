@@ -197,6 +197,31 @@ function Dashboard({ currentUser, onNavigate }) {
       {/* Cards resumen */}
       <div className="dashboard-cards">
 
+        {/* Card Especial de Organización Diaria de Ismael (06:00 - 22:15: CV, Curro, SomosGamberros, SoundPulse, Casa y Gym) */}
+        {currentUser === 'Ismael' && (
+          <button
+            className="dash-card"
+            onClick={() => onNavigate('organizer')}
+            style={{
+              gridColumn: '1 / -1',
+              background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.22), rgba(236, 72, 153, 0.16), rgba(16, 185, 129, 0.16))',
+              border: '1.5px solid rgba(56, 189, 248, 0.45)',
+              textAlign: 'left'
+            }}
+          >
+            <div className="dash-card-icon">🧭</div>
+            <div className="dash-card-content">
+              <h3 className="dash-card-title" style={{ color: '#93c5fd' }}>
+                Organizador de Mi Día (06:00 a 22:15 · Anti-Caos)
+              </h3>
+              <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.83rem', color: 'rgba(255,255,255,0.88)', lineHeight: 1.38 }}>
+                📄 <strong>16:00</strong> CV Papel/Digital + Curro · 😈 <strong>16:40</strong> SomosGamberros · 🎵 <strong>17:15</strong> SoundPulse · 🛠️ <strong>17:45</strong> Casa/Cena + 8m Abs · 🏋️ <strong>18:30</strong> Gym con Sandra
+              </p>
+            </div>
+            <span className="dash-card-arrow">›</span>
+          </button>
+        )}
+
         {/* Card Compras */}
         <button className="dash-card dash-card--shopping" onClick={() => onNavigate('shopping')}>
           <div className="dash-card-icon">🛒</div>

@@ -15,6 +15,7 @@ import MaintenanceLog from './components/MaintenanceLog';
 import StatsDashboard from './components/StatsDashboard';
 import WarrantiesManager from './components/WarrantiesManager';
 import BirthdayManager from './components/BirthdayManager';
+import IsmaelLifeOrganizer from './components/IsmaelLifeOrganizer';
 import GymApp from './GymApp';
 
 
@@ -126,6 +127,20 @@ function App() {
           <p>El espacio compartido de Ismael &amp; Sandra</p>
         </div>
         <div className="header-actions">
+          {currentUser === 'Ismael' && (
+            <button
+              className="header-tool-btn"
+              onClick={() => setActiveTab('organizer')}
+              title="Organizador Diario de Ismael (06:00 a 22:15)"
+              aria-label="Abrir Organizador Diario de Ismael"
+              style={{
+                background: activeTab === 'organizer' ? 'rgba(59, 130, 246, 0.35)' : undefined,
+                borderColor: activeTab === 'organizer' ? '#38bdf8' : undefined
+              }}
+            >
+              🧭
+            </button>
+          )}
           <button 
             className="header-tool-btn" 
             onClick={openStandaloneGymApp} 
@@ -167,6 +182,21 @@ function App() {
           <div style={{ width: '100%' }}>
             <FridgeNotes currentUser={currentUser} />
           </div>
+        </div>
+      )}
+
+      {/* Organizador Diario de Vida y Proyectos de Ismael (06:00 a 22:15) */}
+      {activeTab === 'organizer' && (
+        <div style={{ padding: '0 1rem 1.5rem 1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
+          <IsmaelLifeOrganizer
+            onNavigate={(tab) => {
+              if (tab === 'gym') {
+                openStandaloneGymApp();
+                return;
+              }
+              setActiveTab(tab);
+            }}
+          />
         </div>
       )}
 
@@ -215,8 +245,8 @@ function App() {
         </div>
       )}
 
-      {/* Grid del Dashboard en Escritorio (cuando no estamos en 'home' ni en 'planning' ni en 'gym' ni en 'warranties') */}
-      {activeTab !== 'home' && activeTab !== 'planning' && activeTab !== 'gym' && activeTab !== 'warranties' && (
+      {/* Grid del Dashboard en Escritorio (cuando no estamos en 'home' ni en 'planning' ni en 'gym' ni en 'warranties' ni en 'organizer') */}
+      {activeTab !== 'home' && activeTab !== 'planning' && activeTab !== 'gym' && activeTab !== 'warranties' && activeTab !== 'organizer' && (
         <main className={`dashboard-grid ${isMobile ? 'mobile-tab-view' : ''}`}>
           {/* PESTAÑA 1: LISTA DE COMPRAS */}
           {showSection('shopping') && (
@@ -307,6 +337,17 @@ function App() {
           <span className="mobile-nav-icon">🏠</span>
           <span>Inicio</span>
         </button>
+
+        {currentUser === 'Ismael' && (
+          <button
+            onClick={() => setActiveTab('organizer')}
+            className={`mobile-nav-btn ${activeTab === 'organizer' ? 'active' : ''}`}
+            aria-label="Ver organizador de mi día"
+          >
+            <span className="mobile-nav-icon">🧭</span>
+            <span>Mi Día</span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveTab('shopping')}

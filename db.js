@@ -1365,6 +1365,114 @@ export const db = {
     data.gymWaterLogs[key] = Math.max(0, Number(glasses) || 0);
     writeDB(data);
     return data.gymWaterLogs;
+  },
+
+  // --- ORGANIZADOR DE VIDA Y PROYECTOS DE ISMAEL (06:00 a 22:30) ---
+  getLifeOrganizer: () => {
+    const data = readDB();
+    const defaultProjects = {
+      cv_curro: [
+        { id: 'cv-1', text: 'Actualizar CV en formato Papel (limpio, directo, listo para imprimir)', done: false },
+        { id: 'cv-2', text: 'Actualizar CV Digital (PDF moderno + perfil de LinkedIn / InfoJobs)', done: false },
+        { id: 'cv-3', text: 'Buscar ofertas nuevas y enviar al menos 2-3 candidaturas', done: false }
+      ],
+      somosgamberros: [
+        { id: 'sg-1', text: 'Repaso diario general de SomosGamberros (revisar estado y pendientes)', done: false },
+        { id: 'sg-2', text: 'Meter 1 mejora o corrección diaria en SomosGamberros', done: false }
+      ],
+      soundpulse: [
+        { id: 'sp-1', text: 'Revisar interfaz y generación de audio en SoundPulse (Local AI Music)', done: false },
+        { id: 'sp-2', text: 'Mejorar flujo/modelo local o añadir nueva función a SoundPulse', done: false }
+      ],
+      casa_comidas: [
+        { id: 'cc-1', text: 'Revisar comida/cena del día y dejar adelantada la cena antes de las 18:30', done: false },
+        { id: 'cc-2', text: 'Hacer 1 arreglo o tarea pendiente de casa (20-25 min)', done: false }
+      ]
+    };
+
+    if (!data.ismaelOrganizer) {
+      data.ismaelOrganizer = {
+        dailyBlocks: {}, // { 'YYYY-MM-DD': { 'bloque-0600': true, ... } }
+        projects: defaultProjects,
+        dailyNotes: {}, // { 'YYYY-MM-DD': '...' }
+        jobApplicationsCount: 0
+      };
+      writeDB(data);
+    } else if (!data.ismaelOrganizer.projects) {
+      data.ismaelOrganizer.projects = defaultProjects;
+      writeDB(data);
+    }
+    return data.ismaelOrganizer;
+  },
+
+  toggleLifeBlock: (date, blockId, done) => {
+    const data = readDB();
+    db.getLifeOrganizer();
+    const fresh = readDB();
+    if (!fresh.ismaelOrganizer.dailyBlocks) fresh.ismaelOrganizer.dailyBlocks = {};
+    if (!fresh.ismaelOrganizer.dailyBlocks[date]) fresh.ismaelOrganizer.dailyBlocks[date] = {};
+    if (done === undefined) {
+      fresh.ismaelOrganizer.dailyBlocks[date][blockId] = !fresh.ismaelOrganizer.dailyBlocks[date][blockId];
+    } else {
+      fresh.ismaelOrganizer.dailyBlocks[date][blockId] = !!done;
+    }
+    writeDB(fresh);
+    return fresh.ismaelOrganizer;
+  },
+
+  addLifeProjectItem: (projectKey, text) => {
+    db.getLifeOrganizer();
+    const data = readDB();
+    if (!data.ismaelOrganizer.projects[projectKey]) {
+      data.ismaelOrganizer.projects[projectKey] = [];
+    }
+    data.ismaelOrganizer.projects[projectKey].push({
+      id: 'item-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      text: String(text || '').trim(),
+      done: false,
+      createdAt: new Date().toISOString()
+    });
+    writeDB(data);
+    return data.ismaelOrganizer;
+  },
+
+  toggleLifeProjectItem: (projectKey, itemId) => {
+    db.getLifeOrganizer();
+    const data = readDB();
+    const list = data.ismaelOrganizer.projects[projectKey] || [];
+    const item = list.find(i => i.id === itemId);
+    if (item) {
+      item.done = !item.done;
+      writeDB(data);
+    }
+    return data.ismaelOrganizer;
+  },
+
+  deleteLifeProjectItem: (projectKey, itemId) => {
+    db.getLifeOrganizer();
+    const data = readDB();
+    if (data.ismaelOrganizer.projects[projectKey]) {
+      data.ismaelOrganizer.projects[projectKey] = data.ismaelOrganizer.projects[projectKey].filter(i => i.id !== itemId);
+      writeDB(data);
+    }
+    return data.ismaelOrganizer;
+  },
+
+  updateJobCounter: (delta) => {
+    db.getLifeOrganizer();
+    const data = readDB();
+    data.ismaelOrganizer.jobApplicationsCount = Math.max(0, (Number(data.ismaelOrganizer.jobApplicationsCount) || 0) + Number(delta));
+    writeDB(data);
+    return data.ismaelOrganizer;
+  },
+
+  updateLifeDailyNote: (date, note) => {
+    db.getLifeOrganizer();
+    const data = readDB();
+    if (!data.ismaelOrganizer.dailyNotes) data.ismaelOrganizer.dailyNotes = {};
+    data.ismaelOrganizer.dailyNotes[date] = String(note || '');
+    writeDB(data);
+    return data.ismaelOrganizer;
   }
 };
 

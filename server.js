@@ -1904,6 +1904,70 @@ app.post('/api/plates/reset', (req, res) => {
   }
 });
 
+// --- ORGANIZADOR DE VIDA Y PROYECTOS DE ISMAEL (06:00 a 22:30) ---
+app.get('/api/life-organizer', (req, res) => {
+  try {
+    res.json(db.getLifeOrganizer());
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener organizador de vida' });
+  }
+});
+
+app.post('/api/life-organizer/block', (req, res) => {
+  try {
+    const { date, blockId, done } = req.body;
+    res.json(db.toggleLifeBlock(date, blockId, done));
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar bloque diario' });
+  }
+});
+
+app.post('/api/life-organizer/project', (req, res) => {
+  try {
+    const { projectKey, text } = req.body;
+    if (!projectKey || !text) return res.status(400).json({ error: 'Falta projectKey o text' });
+    res.json(db.addLifeProjectItem(projectKey, text));
+  } catch (error) {
+    res.status(500).json({ error: 'Error al añadir tarea de proyecto' });
+  }
+});
+
+app.put('/api/life-organizer/project', (req, res) => {
+  try {
+    const { projectKey, itemId } = req.body;
+    res.json(db.toggleLifeProjectItem(projectKey, itemId));
+  } catch (error) {
+    res.status(500).json({ error: 'Error al marcar tarea de proyecto' });
+  }
+});
+
+app.delete('/api/life-organizer/project', (req, res) => {
+  try {
+    const { projectKey, itemId } = req.body;
+    res.json(db.deleteLifeProjectItem(projectKey, itemId));
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar tarea de proyecto' });
+  }
+});
+
+app.post('/api/life-organizer/job-counter', (req, res) => {
+  try {
+    const { delta } = req.body;
+    res.json(db.updateJobCounter(delta || 1));
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar contador de ofertas' });
+  }
+});
+
+app.post('/api/life-organizer/note', (req, res) => {
+  try {
+    const { date, note } = req.body;
+    res.json(db.updateLifeDailyNote(date, note));
+  } catch (error) {
+    res.status(500).json({ error: 'Error al guardar nota diaria' });
+  }
+});
+
 // --- 13. INTEGRACIÓN CON ALEXA (WEBHOOK DE LA SKILL) ---
 
 // Helper para construir la respuesta estándar de Alexa

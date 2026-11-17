@@ -1,0 +1,31 @@
+{
+  "name": "Casita Hub · Ismael & Sandra",
+  "short_name": "Casita Hub",
+  "description": "El espacio compartido de Ismael & Sandra: Hogar, Gimnasio Marbella Fit y Organizador de Vida",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "categories": ["lifestyle", "productivity", "health"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

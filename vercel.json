@@ -14,7 +14,7 @@
       "destination": "/api/index.js"
     },
     {
-      "source": "/((?!api/|assets/|manifest\\.json|sw\\.js|icon-).*)",
+      "source": "/((?!api/|assets/|manifest\\.json|sw\\.js|icon-|apple-touch-|favicon).*)" ,
       "destination": "/index.html"
     }
   ]

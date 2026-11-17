@@ -89,12 +89,12 @@ export default function CasitaLauncher({
       },
       {
         id: 'gym',
-        name: 'Entrenamiento',
+        name: 'Casita Gym',
         icon: '🏋️',
         gradient: 'linear-gradient(135deg, #059669, #047857)',
         badge: null,
         badgeType: 'normal',
-        keywords: ['gym', 'entrenamiento', 'pesas', 'marbella', 'fuerza', 'adan', 'cardio'],
+        keywords: ['gym', 'entrenamiento', 'pesas', 'casitagym', 'casita gym', 'fuerza', 'adan', 'cardio'],
         action: () => onOpenApp('gym')
       },
       {

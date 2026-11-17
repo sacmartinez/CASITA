@@ -132,10 +132,10 @@ const DAILY_SCHEDULE_BLOCKS = [
     endMin: 15,
     durationMin: 55,
     icon: '🏋️',
-    title: '¡Llega Sandra (18:30)! → Ir Juntos al Gimnasio Marbella',
+    title: '¡Llega Sandra (18:30)! → Ir Juntos al Gimnasio (Casita Gym)',
     category: 'Gimnasio con Sandra',
     color: '#059669',
-    desc: 'A las 18:30 Sandra llega y tú ya tienes tus proyectos, tu CV y la casa listos. Os vais juntos al Gimnasio Marbella a entrenar relajados y con la cabeza despejada.',
+    desc: 'A las 18:30 Sandra llega y tú ya tienes tus proyectos, tu CV y la casa listos. Os vais juntos al gimnasio a entrenar relajados y con la cabeza despejada.',
     actionType: 'gym'
   },
   {
@@ -1115,7 +1115,7 @@ export default function IsmaelLifeOrganizer({ onNavigate }) {
                             cursor: 'pointer'
                           }}
                         >
-                          🏋️ Ir a Marbella Fit →
+                          🏋️ Ir a Casita Gym →
                         </button>
                       )}
 

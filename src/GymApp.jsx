@@ -136,7 +136,7 @@ const GYM_DAYS_ISMAEL = [
       { name: 'Bloque 1: Cardio Potente en Cinta o Elíptica', machine: 'Zona Cardio (Pantalla)', sets: 1, baseReps: '20 min', baseKg: { Ismael: 0, Sandra: 0 }, stepKg: 0, isCardio: true, hasCardioScreen: true, baseKm: 3.3, baseKcal: 120, baseLevel: 6, tip: 'Calienta 2 min y mete ritmo fuerte en nivel 6 o superior.' },
       { name: 'Bloque 2: Remo + Curl de Bíceps y Flexiones en TRX', machine: 'Zona Funcional TRX', sets: 4, baseReps: '12 + 12', baseKg: { Ismael: 0, Sandra: 0 }, stepKg: 0, isCardio: true, hasCardioScreen: false, tip: 'Usa tu propio peso en las correas TRX para congestionar brazos y pecho.' },
       { name: 'Bloque 3: Triserie Tableta de Chocolate (Superior + Inferior + Plancha)', machine: 'Zona Colchonetas / Silla Romana', sets: 4, baseReps: '45 seg', baseKg: { Ismael: 0, Sandra: 0 }, stepKg: 0, isCardio: true, hasCardioScreen: false, tip: '15 elevaciones de piernas + 15 crunches + 45s de plancha sin descanso.' },
-      { name: 'Bloque 4: Remate Cardio Quema-Grasa', machine: 'Elíptica / Bici (Pantalla)', sets: 1, baseReps: '15 min', baseKg: { Ismael: 0, Sandra: 0 }, stepKg: 0, isCardio: true, hasCardioScreen: true, baseKm: 2.5, baseKcal: 95, baseLevel: 6, tip: 'Último empujón para salir del Marbella habiendo quemado al máximo.' }
+      { name: 'Bloque 4: Remate Cardio Quema-Grasa', machine: 'Elíptica / Bici (Pantalla)', sets: 1, baseReps: '15 min', baseKg: { Ismael: 0, Sandra: 0 }, stepKg: 0, isCardio: true, hasCardioScreen: true, baseKm: 2.5, baseKcal: 95, baseLevel: 6, tip: 'Último empujón para salir del gym habiendo quemado al máximo.' }
     ]
   }
 ];
@@ -149,7 +149,7 @@ const GYM_DAYS_SANDRA = [
     id: 'dia-1',
     dayNumber: 1,
     shortTab: 'Día 1: Cuerpo Completo',
-    title: '🔥 Día 1: Full Body + Cardio (Gimnasio Marbella)',
+    title: '🔥 Día 1: Full Body + Cardio (Casita Gym)',
     subtitle: 'Activa piernas, espalda, pecho y remata quemando calorías',
     duration: 50,
     exercises: [
@@ -196,7 +196,7 @@ const GYM_DAYS_SANDRA = [
     id: 'dia-4',
     dayNumber: 4,
     shortTab: 'Día 4: Cardio / Clase',
-    title: '🚴 Día 4: Quema-Calorías (Circuito o Clase del Marbella)',
+    title: '🚴 Día 4: Quema-Calorías (Circuito o Clase de Cardio)',
     subtitle: 'Spinning, Zumba, TRX o Circuito de Cardio para sudar y disfrutar',
     duration: 45,
     exercises: [
@@ -279,7 +279,7 @@ const MOTIVATIONAL_QUOTES = [
   "🚀 Los días que menos apetece ir al gimnasio son exactamente los días que más cuentan.",
   "🌈 Cuerpo en movimiento, mente en calma. Usa este entreno para soltar todo el estrés del día.",
   "🔥 No busques resultados en un día, busca sentirte orgullosa cada vez que terminas tu rutina.",
-  "👫 Entrenar en equipo multiplica las ganas por dos. ¡Hoy vais a salir del Marbella con una sonrisa enorme!",
+  "👫 Entrenar en equipo multiplica las ganas por dos. ¡Hoy vais a salir del gym con una sonrisa enorme!",
   "💎 La disciplina es elegir entre lo que te apetece ahora mismo y lo que más quieres conseguir.",
   "✨ Cada gota de esfuerzo de hoy es energía, salud y confianza para mañana. ¡Tú puedes con esto y más!"
 ];
@@ -782,7 +782,7 @@ function GymApp({ onBackToCasita }) {
   }, [unlockedUser]);
 
   useEffect(() => {
-    document.title = 'Marbella Fit · Adán Entrenador';
+    document.title = 'Casita Gym · Adán Entrenador';
     let manifestLink = document.querySelector('link[rel="manifest"]');
     if (!manifestLink) {
       manifestLink = document.createElement('link');
@@ -805,7 +805,7 @@ function GymApp({ onBackToCasita }) {
         if (data.goals) setGoals(data.goals);
       }
     } catch (e) {
-      console.error('Error cargando Marbella Fit:', e);
+      console.error('Error cargando Casita Gym:', e);
     }
   };
 
@@ -1779,7 +1779,7 @@ function GymApp({ onBackToCasita }) {
         <div style={{ ...S.card, maxWidth: '400px', width: '100%', padding: '1.6rem', textAlign: 'center' }}>
           <div style={{ fontSize: '2.6rem', marginBottom: '0.3rem' }}>🏋️</div>
           <h1 style={{ margin: '0 0 0.25rem 0', fontSize: '1.35rem', fontWeight: 900, color: '#0f172a' }}>
-            Marbella Fit · Entrenador Adán
+            Casita Gym · Entrenador Adán
           </h1>
           <p style={{ margin: '0 0 1.2rem 0', fontSize: '0.82rem', color: '#64748b' }}>
             Elige tu perfil personal e introduce tu contraseña
@@ -2319,7 +2319,7 @@ function GymApp({ onBackToCasita }) {
                 <div style={S.card}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.55rem', flexWrap: 'wrap', gap: '0.4rem' }}>
                     <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#059669', textTransform: 'uppercase' }}>
-                      📍 Al llegar al Gimnasio Marbella · Plan de Adán para hoy
+                      📍 Al llegar a entrenar · Plan de Casita Gym
                     </span>
                     <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
                       {todayCompletedGymWorkout && editingCompletedToday && (
@@ -2474,7 +2474,7 @@ function GymApp({ onBackToCasita }) {
                   }}>
                     <span style={{ fontSize: '2.4rem' }}>🚀</span>
                     <h3 style={{ margin: 0, fontSize: '1.18rem', fontWeight: 900 }}>
-                      ¿Listo para entrenar hoy en Marbella Fit?
+                      ¿Listo para entrenar hoy en Casita Gym?
                     </h3>
                     <p style={{ margin: 0, fontSize: '0.82rem', opacity: 0.92, maxWidth: '420px', lineHeight: 1.45 }}>
                       Pulsa para marcar tu <strong>hora de entrada</strong>. Calcularemos el tiempo exacto en el gym y tus estadísticas para la tarjeta de <strong>Casita Gym</strong>.
@@ -2818,7 +2818,7 @@ function GymApp({ onBackToCasita }) {
                           }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.65rem' }}>
                               <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0369a1' }}>
-                                📟 Datos de la Pantalla de Cardio (Gimnasio Marbella)
+                                📟 Datos de la Pantalla de Cardio (Casita Gym)
                               </div>
 
                               <label style={{
@@ -4009,7 +4009,7 @@ function GymApp({ onBackToCasita }) {
             {/* Guía de Máquinas del Gimnasio Marbella */}
             <div style={S.card}>
               <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: '#0f172a' }}>
-                🏢 Máquinas del Gimnasio Marbella (Vía Lusitana 1)
+                🏢 Máquinas de Casita Gym (Vía Lusitana 1)
               </h3>
               <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
                 {['TODAS', 'Pierna y Glúteo', 'Pecho y Espalda', 'Hombros y Brazos', 'Cardio'].map(z => (
@@ -4136,7 +4136,7 @@ function GymApp({ onBackToCasita }) {
           ...S.bottomNav,
           gridTemplateColumns: `repeat(${visibleTabs.length}, 1fr)`
         }}
-        aria-label="Menú principal Marbella Fit"
+        aria-label="Menú principal Casita Gym"
       >
         {visibleTabs.map(tab => {
           const isAct = activeTab === tab.id;

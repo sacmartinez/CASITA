@@ -630,7 +630,7 @@ function GymManager({ currentUser }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '1.5rem' }}>🏋️</span>
               <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#ffffff' }}>
-                Gimnasio Marbella · Personal Trainer
+                Casita Gym · Personal Trainer
               </h2>
               <span style={{
                 fontSize: '0.68rem',

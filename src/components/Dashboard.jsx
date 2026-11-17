@@ -385,7 +385,7 @@ function Dashboard({ currentUser, onNavigate }) {
           <span className="dash-card-arrow">›</span>
         </button>
 
-        {/* Card App Independiente: Marbella Fit */}
+        {/* Card App Independiente: Casita Gym */}
         <button
           className="dash-card dash-card--gym"
           onClick={() => onNavigate('gym')}
@@ -393,12 +393,12 @@ function Dashboard({ currentUser, onNavigate }) {
         >
           <div className="dash-card-icon">🏋️</div>
           <div className="dash-card-content">
-            <h3 className="dash-card-title">App: Marbella Fit ↗</h3>
+            <h3 className="dash-card-title">App: Casita Gym ↗</h3>
             <p className="dash-card-count" style={{ fontSize: '0.98rem', color: '#34d399', fontWeight: '700' }}>
               {(gymData.workouts || []).length} entreno{(gymData.workouts || []).length !== 1 ? 's' : ''} registrado{(gymData.workouts || []).length !== 1 ? 's' : ''}
             </p>
             <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.3rem', display: 'block' }}>
-              Abrir vuestra App de Gimnasio y Personal Trainer
+              Abrir vuestra App de Casita Gym y Personal Trainer
             </span>
           </div>
           <span className="dash-card-arrow">›</span>

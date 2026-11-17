@@ -17,6 +17,8 @@ import WarrantiesManager from './components/WarrantiesManager';
 import BirthdayManager from './components/BirthdayManager';
 import IsmaelLifeOrganizer from './components/IsmaelLifeOrganizer';
 import GymApp from './GymApp';
+import CasitaLauncher from './components/CasitaLauncher';
+import PlatesModal from './components/PlatesModal';
 
 
 function App() {
@@ -25,18 +27,34 @@ function App() {
     const q = new URLSearchParams(window.location.search).get('app');
     return p.startsWith('/gym') || q === 'gym';
   });
+
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('hogar_user');
     return (saved === 'Ismael' || saved === 'Sandra') ? saved : 'Ismael';
   });
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'shopping' | 'planning' | 'tasks' | 'care'
+
+  // Modo Ecosistema / Launcher Beta (Persistido por usuario/navegador)
+  const [isBetaLauncher, setIsBetaLauncher] = useState(() => {
+    const saved = localStorage.getItem('casita_ecosystem_beta');
+    return saved === null ? true : saved === 'true'; // Activo por defecto en fase beta
+  });
+
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = localStorage.getItem('casita_ecosystem_beta');
+    return (saved === null || saved === 'true') ? 'launcher' : 'home';
+  });
+
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [showDailySummaryModal, setShowDailySummaryModal] = useState(false);
   const [dailySummaryData, setDailySummaryData] = useState(null);
+
+  // Minijuego Matrículas
+  const [plates, setPlates] = useState([]);
+  const [showPlatesModal, setShowPlatesModal] = useState(false);
   
-  // Sub-tabs para agrupar las nuevas herramientas en las pestañas principales
-  const [planningSubTab, setPlanningSubTab] = useState('weekly'); // 'weekly' | 'recipes'
+  // Sub-tabs para agrupar las herramientas en las pestañas principales
+  const [planningSubTab, setPlanningSubTab] = useState('weekly'); // 'weekly' | 'recipes' | 'birthdays'
   const [tasksSubTab, setTasksSubTab] = useState('chores'); // 'chores' | 'maintenance' | 'stats'
   const [careSubTab, setCareSubTab] = useState('logs'); // 'logs' | 'journal'
 
@@ -51,6 +69,48 @@ function App() {
     } catch (err) {
       console.error('Error al cargar resumen diario:', err);
     }
+  };
+
+  const fetchPlates = async () => {
+    try {
+      const res = await fetch('/api/plates');
+      if (res.ok) {
+        setPlates(await res.json());
+      }
+    } catch (e) {
+      console.error('Error al cargar matrículas:', e);
+    }
+  };
+
+  const handleTogglePlate = async (id) => {
+    try {
+      const res = await fetch('/api/plates/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, user: currentUser })
+      });
+      if (res.ok) {
+        setPlates(await res.json());
+      }
+    } catch (e) {
+      console.error('Error conmutando matrícula:', e);
+    }
+  };
+
+  const handleResetPlates = async () => {
+    try {
+      const res = await fetch('/api/plates/reset', { method: 'POST' });
+      if (res.ok) {
+        setPlates(await res.json());
+      }
+    } catch (e) {
+      console.error('Error al reiniciar matrículas:', e);
+    }
+  };
+
+  const openPlatesModal = () => {
+    fetchPlates();
+    setShowPlatesModal(true);
   };
 
   useEffect(() => {
@@ -76,17 +136,43 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  const toggleBetaLauncher = () => {
+    setIsBetaLauncher(prev => {
+      const next = !prev;
+      localStorage.setItem('casita_ecosystem_beta', String(next));
+      if (next) {
+        setActiveTab('launcher');
+      } else {
+        setActiveTab('home');
+      }
+      return next;
+    });
+  };
+
+  const handleOpenLauncherApp = (tab, subTab) => {
+    if (tab === 'gym') {
+      openStandaloneGymApp();
+      return;
+    }
+    setActiveTab(tab);
+    if (tab === 'planning' && subTab) {
+      setPlanningSubTab(subTab);
+    } else if (tab === 'tasks' && subTab) {
+      setTasksSubTab(subTab);
+    } else if (tab === 'care' && subTab) {
+      setCareSubTab(subTab);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   // En móvil: solo renderiza el tab activo
   // En escritorio: renderiza el home o el dashboard normal
   const showSection = (tab) => {
     if (isMobile) {
       return activeTab === tab;
     }
-    // En escritorio:
-    // Si la pestaña activa es 'home', mostramos el Dashboard general.
-    // Si es otra pestaña, mostramos esa sección expandida.
-    if (activeTab === 'home') {
-      return false; // Mostraremos el Dashboard component en su lugar
+    if (activeTab === 'home' || activeTab === 'launcher') {
+      return false;
     }
     return activeTab === tab;
   };
@@ -123,10 +209,31 @@ function App() {
       {/* Cabecera Principal */}
       <header className="app-header">
         <div className="logo-section">
-          <h1 onClick={() => setActiveTab('home')} style={{ cursor: 'pointer' }}>Casita Hub</h1>
+          <h1 
+            onClick={() => setActiveTab(isBetaLauncher ? 'launcher' : 'home')} 
+            style={{ cursor: 'pointer' }}
+            title={isBetaLauncher ? "Ir a la pantalla de apps CasitaOS" : "Ir a Inicio"}
+          >
+            Casita Hub
+          </h1>
           <p>El espacio compartido de Ismael &amp; Sandra</p>
         </div>
         <div className="header-actions">
+          {/* Botón Switch Modo Ecosistema Launcher Beta */}
+          <button
+            className="header-tool-btn"
+            onClick={toggleBetaLauncher}
+            title={isBetaLauncher ? "Modo Ecosistema activo (Click para Vista Clásica)" : "Probar Ecosistema CasitaOS (Beta Launcher)"}
+            aria-label="Conmutar Modo Ecosistema Beta"
+            style={{
+              background: isBetaLauncher ? 'linear-gradient(135deg, rgba(167, 139, 250, 0.35), rgba(96, 165, 250, 0.35))' : undefined,
+              borderColor: isBetaLauncher ? '#a78bfa' : undefined,
+              boxShadow: isBetaLauncher ? '0 0 10px rgba(167, 139, 250, 0.35)' : undefined
+            }}
+          >
+            📱
+          </button>
+
           {currentUser === 'Ismael' && (
             <button
               className="header-tool-btn"
@@ -141,6 +248,7 @@ function App() {
               🧭
             </button>
           )}
+
           <button 
             className="header-tool-btn" 
             onClick={openStandaloneGymApp} 
@@ -149,6 +257,7 @@ function App() {
           >
             🏋️
           </button>
+
           <button 
             className="header-tool-btn" 
             onClick={() => setShowTicketModal(true)} 
@@ -157,12 +266,59 @@ function App() {
           >
             🛠️
           </button>
+
           <NotificationButton currentUser={currentUser} />
           <UserSelector currentUser={currentUser} setCurrentUser={setCurrentUser} />
         </div>
       </header>
 
-      {/* Contenido según pestaña */}
+      {/* Barra superior de retorno cuando estamos dentro de una app en Modo Ecosistema */}
+      {isBetaLauncher && activeTab !== 'launcher' && (
+        <div className="in-app-launcher-bar">
+          <button 
+            className="in-app-back-btn" 
+            onClick={() => {
+              setActiveTab('launcher');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            title="Volver al Launcher CasitaOS"
+          >
+            <span>←</span>
+            <span>CasitaOS</span>
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span className="in-app-current-app-pill">📱 Ecosistema Beta</span>
+            <button
+              onClick={toggleBetaLauncher}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted)',
+                fontSize: '0.72rem',
+                cursor: 'pointer',
+                textDecoration: 'underline'
+              }}
+              title="Volver al diseño clásico de siempre"
+            >
+              Vista Clásica
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pantalla Principal del Ecosistema Beta (Launcher) */}
+      {activeTab === 'launcher' && (
+        <CasitaLauncher
+          currentUser={currentUser}
+          onOpenApp={handleOpenLauncherApp}
+          onToggleClassicMode={toggleBetaLauncher}
+          onOpenTickets={() => setShowTicketModal(true)}
+          onOpenPlates={openPlatesModal}
+          isBetaActive={isBetaLauncher}
+        />
+      )}
+
+      {/* Vista Clásica del Dashboard (Home) */}
       {activeTab === 'home' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', padding: '0 1rem 1.5rem 1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
           <Dashboard 
@@ -245,8 +401,8 @@ function App() {
         </div>
       )}
 
-      {/* Grid del Dashboard en Escritorio (cuando no estamos en 'home' ni en 'planning' ni en 'gym' ni en 'warranties' ni en 'organizer') */}
-      {activeTab !== 'home' && activeTab !== 'planning' && activeTab !== 'gym' && activeTab !== 'warranties' && activeTab !== 'organizer' && (
+      {/* Grid del Dashboard en Escritorio (cuando no estamos en 'home', 'launcher', 'planning', 'gym', 'warranties', 'organizer') */}
+      {activeTab !== 'home' && activeTab !== 'launcher' && activeTab !== 'planning' && activeTab !== 'gym' && activeTab !== 'warranties' && activeTab !== 'organizer' && (
         <main className={`dashboard-grid ${isMobile ? 'mobile-tab-view' : ''}`}>
           {/* PESTAÑA 1: LISTA DE COMPRAS */}
           {showSection('shopping') && (
@@ -327,82 +483,105 @@ function App() {
         </main>
       )}
 
-      {/* Barra de navegación inferior (o superior para escritorio) */}
-      <nav className="mobile-nav-bar" aria-label="Navegación móvil">
-        <button
-          onClick={() => setActiveTab('home')}
-          className={`mobile-nav-btn ${activeTab === 'home' ? 'active' : ''}`}
-          aria-label="Ver inicio"
-        >
-          <span className="mobile-nav-icon">🏠</span>
-          <span>Inicio</span>
-        </button>
+      {/* Barra de navegación inferior (se oculta en la pantalla principal del Launcher para mostrar su Dock nativo) */}
+      {(!isBetaLauncher || activeTab !== 'launcher') && (
+        <nav className="mobile-nav-bar" aria-label="Navegación móvil">
+          {isBetaLauncher ? (
+            <button
+              onClick={() => setActiveTab('launcher')}
+              className={`mobile-nav-btn ${activeTab === 'launcher' ? 'active' : ''}`}
+              aria-label="Volver a la cuadrícula de apps CasitaOS"
+            >
+              <span className="mobile-nav-icon">📱</span>
+              <span>CasitaOS</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setActiveTab('home')}
+              className={`mobile-nav-btn ${activeTab === 'home' ? 'active' : ''}`}
+              aria-label="Ver inicio"
+            >
+              <span className="mobile-nav-icon">🏠</span>
+              <span>Inicio</span>
+            </button>
+          )}
 
-        {currentUser === 'Ismael' && (
+          {currentUser === 'Ismael' && (
+            <button
+              onClick={() => setActiveTab('organizer')}
+              className={`mobile-nav-btn ${activeTab === 'organizer' ? 'active' : ''}`}
+              aria-label="Ver organizador de mi día"
+            >
+              <span className="mobile-nav-icon">🧭</span>
+              <span>Mi Día</span>
+            </button>
+          )}
+
           <button
-            onClick={() => setActiveTab('organizer')}
-            className={`mobile-nav-btn ${activeTab === 'organizer' ? 'active' : ''}`}
-            aria-label="Ver organizador de mi día"
+            onClick={() => setActiveTab('shopping')}
+            className={`mobile-nav-btn ${activeTab === 'shopping' ? 'active' : ''}`}
+            aria-label="Ver lista de la compra"
           >
-            <span className="mobile-nav-icon">🧭</span>
-            <span>Mi Día</span>
+            <span className="mobile-nav-icon">🛒</span>
+            <span>Compras</span>
           </button>
-        )}
 
-        <button
-          onClick={() => setActiveTab('shopping')}
-          className={`mobile-nav-btn ${activeTab === 'shopping' ? 'active' : ''}`}
-          aria-label="Ver lista de la compra"
-        >
-          <span className="mobile-nav-icon">🛒</span>
-          <span>Compras</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('expenses')}
+            className={`mobile-nav-btn ${activeTab === 'expenses' ? 'active' : ''}`}
+            aria-label="Ver gastos compartidos"
+          >
+            <span className="mobile-nav-icon">💰</span>
+            <span>Gastos</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('expenses')}
-          className={`mobile-nav-btn ${activeTab === 'expenses' ? 'active' : ''}`}
-          aria-label="Ver gastos compartidos"
-        >
-          <span className="mobile-nav-icon">💰</span>
-          <span>Gastos</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('planning')}
+            className={`mobile-nav-btn ${activeTab === 'planning' ? 'active' : ''}`}
+            aria-label="Ver planificación semanal"
+          >
+            <span className="mobile-nav-icon">📅</span>
+            <span>Planning</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('planning')}
-          className={`mobile-nav-btn ${activeTab === 'planning' ? 'active' : ''}`}
-          aria-label="Ver planificación semanal"
-        >
-          <span className="mobile-nav-icon">📅</span>
-          <span>Planning</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('tasks')}
+            className={`mobile-nav-btn ${activeTab === 'tasks' ? 'active' : ''}`}
+            aria-label="Ver tareas domésticas e historial"
+          >
+            <span className="mobile-nav-icon">📋</span>
+            <span>Tareas</span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('tasks')}
-          className={`mobile-nav-btn ${activeTab === 'tasks' ? 'active' : ''}`}
-          aria-label="Ver tareas domésticas e historial"
-        >
-          <span className="mobile-nav-icon">📋</span>
-          <span>Tareas</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('care')}
+            className={`mobile-nav-btn ${activeTab === 'care' ? 'active' : ''}`}
+            aria-label="Ver cuidado de mascotas y plantas"
+          >
+            <span className="mobile-nav-icon">🐹</span>
+            <span>Cuidados</span>
+          </button>
+        </nav>
+      )}
 
-        <button
-          onClick={() => setActiveTab('care')}
-          className={`mobile-nav-btn ${activeTab === 'care' ? 'active' : ''}`}
-          aria-label="Ver cuidado de mascotas y plantas"
-        >
-          <span className="mobile-nav-icon">🐹</span>
-          <span>Cuidados</span>
-        </button>
-      </nav>
-
-      {/* Modal de Tickets (Pulsación larga en el logo) */}
+      {/* Modal de Tickets (Buzón de Ideas e Incidencias) */}
       <TicketModal 
         isOpen={showTicketModal} 
         onClose={() => setShowTicketModal(false)} 
         currentUser={currentUser} 
       />
 
-      {/* Modal Resumen Diario (Al pulsar la notificación de la mañana) */}
+      {/* Modal de Matrículas (Minijuego) */}
+      <PlatesModal
+        isOpen={showPlatesModal}
+        onClose={() => setShowPlatesModal(false)}
+        plates={plates}
+        onTogglePlate={handleTogglePlate}
+        currentUser={currentUser}
+        onReset={handleResetPlates}
+      />
+
+      {/* Modal Resumen Diario */}
       {showDailySummaryModal && dailySummaryData && (
         <div className="modal-overlay" onClick={() => setShowDailySummaryModal(false)}>
           <div className="modal-content glass-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '450px', width: '90%', maxHeight: '85vh', overflowY: 'auto' }}>
@@ -414,12 +593,10 @@ function App() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-              {/* Frase célebre aleatoria */}
               <div style={{ fontStyle: 'italic', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.02)', padding: '0.8rem 1rem', borderRadius: '12px', borderLeft: '4px solid var(--primary)', fontSize: '0.88rem', lineHeight: '1.4' }}>
                 {dailySummaryData.quote}
               </div>
 
-              {/* Comidas y Actividades */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                   <span style={{ fontSize: '1.1rem' }}>🍳</span>
@@ -448,7 +625,6 @@ function App() {
 
               <hr style={{ border: 'none', height: '1px', background: 'var(--glass-border)', margin: '0.2rem 0' }} />
 
-              {/* Tareas del Hogar Pendientes */}
               <div>
                 <h3 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.6rem', letterSpacing: '0.5px' }}>
                   📋 Tareas aún pendientes en casa
@@ -468,7 +644,6 @@ function App() {
                 )}
               </div>
 
-              {/* Botón de cierre */}
               <button 
                 onClick={() => setShowDailySummaryModal(false)}
                 className="btn-primario" 

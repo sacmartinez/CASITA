@@ -572,6 +572,10 @@ function getMadridDateStr(daysOffset = 0) {
 
 function GymApp({ onBackToCasita }) {
   const [unlockedUser, setUnlockedUser] = useState(() => {
+    const activeHogarUser = localStorage.getItem('hogar_user') || 'Ismael';
+    if (localStorage.getItem(`gym_unlocked_${activeHogarUser}`) === 'true') {
+      return activeHogarUser;
+    }
     const saved = localStorage.getItem('marbella_fit_unlocked_user');
     return (saved === 'Ismael' || saved === 'Sandra') ? saved : null;
   });
@@ -1571,6 +1575,7 @@ function GymApp({ onBackToCasita }) {
     e.preventDefault();
     if (pinInput.trim() === USER_PINS[loginTargetUser]) {
       setUnlockedUser(loginTargetUser);
+      localStorage.setItem(`gym_unlocked_${loginTargetUser}`, 'true');
       localStorage.setItem('marbella_fit_unlocked_user', loginTargetUser);
       localStorage.setItem('hogar_user', loginTargetUser);
       setPinInput('');

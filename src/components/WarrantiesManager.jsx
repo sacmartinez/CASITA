@@ -34,8 +34,9 @@ const compressImage = (file) => {
 };
 
 export default function WarrantiesManager({ currentUser }) {
-  const [activeTab, setActiveTab] = useState('general'); // 'general' | 'moto' | 'coche'
+  const [activeTab, setActiveTab] = useState('moto'); // 'moto' | 'coche' | 'general'
   const [activeCar, setActiveCar] = useState('Ford Focus'); // 'Ford Focus' | 'Ford Fiesta'
+  const [activeMoto, setActiveMoto] = useState('Kawasaki Ninja 650'); // 'Kawasaki Ninja 650' | 'Benelli BN 125'
 
   // Datos
   const [warranties, setWarranties] = useState([]);
@@ -152,7 +153,7 @@ export default function WarrantiesManager({ currentUser }) {
     if (!mDate || !mType) return;
     setSubmittingM(true);
 
-    const vehicleName = activeTab === 'moto' ? 'Benelli BN 125' : activeCar;
+    const vehicleName = activeTab === 'moto' ? activeMoto : activeCar;
 
     try {
       let imagesBase64 = [];
@@ -418,7 +419,7 @@ export default function WarrantiesManager({ currentUser }) {
     w.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const vehicleName = activeTab === 'moto' ? 'Benelli BN 125' : activeCar;
+  const vehicleName = activeTab === 'moto' ? activeMoto : activeCar;
   const currentVehicleHistory = maintenanceBooks[vehicleName] || [];
 
   return (
@@ -709,6 +710,43 @@ export default function WarrantiesManager({ currentUser }) {
       {/* ==================== PESTAÑA MOTO / COCHE ==================== */}
       {(activeTab === 'moto' || activeTab === 'coche') && (
         <div>
+          {/* Subselector para Motos */}
+          {activeTab === 'moto' && (
+            <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1.2rem', background: 'rgba(255,255,255,0.01)', padding: '0.3rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+              {['Kawasaki Ninja 650', 'Benelli BN 125'].map(moto => (
+                <button
+                  key={moto}
+                  onClick={() => setActiveMoto(moto)}
+                  className={`tab-btn ${activeMoto === moto ? 'active' : ''}`}
+                  style={{
+                    flex: 1,
+                    padding: '0.45rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: activeMoto === moto ? 'var(--primary)' : 'transparent',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    fontSize: '0.74rem',
+                    fontWeight: 600,
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.3rem'
+                  }}
+                >
+                  <span>🏍️</span>
+                  <span>{moto}</span>
+                  {moto === 'Kawasaki Ninja 650' && (
+                    <span style={{ fontSize: '0.62rem', background: '#10b981', color: '#fff', padding: '1px 5px', borderRadius: '4px', fontWeight: 'bold' }}>
+                      12.000 km
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Subselector para Coches */}
           {activeTab === 'coche' && (
             <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1.2rem', background: 'rgba(255,255,255,0.01)', padding: '0.3rem', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>

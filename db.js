@@ -772,15 +772,28 @@ export const db = {
   getMaintenanceBooks: () => {
     const data = readDB();
     if (!data.maintenanceBooks) {
-      data.maintenanceBooks = {
-        "Benelli BN 125": [],
-        "Ford Focus": [],
-        "Ford Fiesta": []
-      };
-      writeDB(data);
+      data.maintenanceBooks = {};
     }
     // Asegurar que existan todos los vehículos requeridos en la estructura
     let updated = false;
+    const initialKawasaki = [
+      {
+        id: 1731860000000,
+        date: new Date().toISOString().split('T')[0],
+        km: 12000,
+        type: "revision",
+        description: "Compra del vehículo con 12.000 km. Incorporación de Kawasaki Ninja 650 a Casita.",
+        imagesBase64: [],
+        addedBy: "Ismael",
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    if (!data.maintenanceBooks["Kawasaki Ninja 650"] || data.maintenanceBooks["Kawasaki Ninja 650"].length === 0) {
+      data.maintenanceBooks["Kawasaki Ninja 650"] = initialKawasaki;
+      updated = true;
+    }
+
     ["Benelli BN 125", "Ford Focus", "Ford Fiesta"].forEach(v => {
       if (!data.maintenanceBooks[v]) {
         data.maintenanceBooks[v] = [];

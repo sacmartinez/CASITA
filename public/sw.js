@@ -20,7 +20,10 @@ self.addEventListener('push', (event) => {
     body: data.body,
     icon: '/icon-192.png',
     badge: '/favicon.png',
-    vibrate: [100, 50, 100],
+    vibrate: [150, 80, 150],
+    tag: 'casita-alert-' + Date.now(),
+    renotify: true,
+    requireInteraction: false,
     data: {
       url: data.url || '/'
     }

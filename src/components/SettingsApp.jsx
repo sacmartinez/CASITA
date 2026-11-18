@@ -11,6 +11,7 @@ export default function SettingsApp({
   const [pushStatus, setPushStatus] = useState('checking'); // 'enabled' | 'disabled' | 'unsupported'
   const [pushLoading, setPushLoading] = useState(false);
   const [testSent, setTestSent] = useState(false);
+  const [testFeedback, setTestFeedback] = useState('');
 
   // Notificaciones por aplicación
   const [appNotifications, setAppNotifications] = useState({
@@ -24,7 +25,7 @@ export default function SettingsApp({
   const [testingWeather, setTestingWeather] = useState(false);
   const [weatherFeedback, setWeatherFeedback] = useState('');
 
-  // Cargar estado de notificaciones push del navegador
+  // Cargar estado de notificaciones push del navegador y sincronizar si ya está activo
   useEffect(() => {
     checkPushStatus();
   }, [currentUser]);
@@ -65,8 +66,26 @@ export default function SettingsApp({
 
   const handleTestWeatherAlert = async () => {
     setTestingWeather(true);
-    setWeatherFeedback('⏳ Comprobando previsión de hoy en Carabanchel, Alcobendas y Ventas...');
+    setWeatherFeedback('⏳ Sincronizando y consultando previsión en Carabanchel, Alcobendas y Ventas...');
     try {
+      if ('serviceWorker' in navigator) {
+        let reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) reg = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+        if (reg && reg.pushManager) {
+          let sub = await reg.pushManager.getSubscription();
+          if (!sub) {
+            await handleTogglePush(true);
+          } else {
+            await fetch('/api/push/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ subscription: sub, user: currentUser })
+            }).catch(() => {});
+          }
+        }
+      }
+
       const res = await fetch('/api/push/test-weather', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,7 +95,7 @@ export default function SettingsApp({
       if (res.ok && data?.result?.message) {
         setWeatherFeedback(`📨 ${data.result.message}`);
       } else {
-        setWeatherFeedback('🚀 Aviso de lluvia enviado a tu dispositivo.');
+        setWeatherFeedback(`⚠️ ${data?.error || 'Aviso enviado o sin suscripción activa'}`);
       }
       setTimeout(() => setWeatherFeedback(''), 10000);
     } catch (err) {
@@ -93,23 +112,35 @@ export default function SettingsApp({
       return;
     }
     try {
-      const reg = await navigator.serviceWorker.getRegistration();
+      let reg = await navigator.serviceWorker.getRegistration();
       if (!reg) {
-        setPushStatus('disabled');
-        return;
+        reg = await navigator.serviceWorker.register('/sw.js');
       }
+      await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
-      setPushStatus(sub ? 'enabled' : 'disabled');
+      const isGranted = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+      const active = !!sub && isGranted;
+      setPushStatus(active ? 'enabled' : 'disabled');
+
+      // Si está activo en el navegador, asegurar que MongoDB lo tiene registrado
+      if (active && sub) {
+        fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription: sub, user: currentUser })
+        }).catch(() => {});
+      }
     } catch (e) {
       console.error(e);
       setPushStatus('disabled');
     }
   };
 
-  const handleTogglePush = async () => {
+  const handleTogglePush = async (forceSubscribe = false) => {
     setPushLoading(true);
+    setTestFeedback('⏳ Conectando con Google FCM...');
     try {
-      if (pushStatus === 'enabled') {
+      if (pushStatus === 'enabled' && !forceSubscribe) {
         const reg = await navigator.serviceWorker.getRegistration();
         if (reg) {
           const sub = await reg.pushManager.getSubscription();
@@ -118,20 +149,25 @@ export default function SettingsApp({
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ endpoint: sub.endpoint })
-            });
-            await sub.unsubscribe();
+            }).catch(() => {});
+            await sub.unsubscribe().catch(() => {});
           }
         }
         setPushStatus('disabled');
+        setTestFeedback('⚪ Notificaciones desactivadas en este móvil.');
       } else {
         const perm = await Notification.requestPermission();
         if (perm !== 'granted') {
-          alert('Debes permitir las notificaciones en el navegador para activarlas.');
+          alert('Debes permitir las notificaciones en los ajustes del navegador para activarlas.');
           setPushLoading(false);
+          setTestFeedback('⚠️ Permiso denegado por el navegador.');
           return;
         }
 
-        const reg = await navigator.serviceWorker.ready;
+        let reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) reg = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+
         const KNOWN_VAPID_PUBLIC_KEY = 'BCBMbxMgpZPqp0JOT3YiIc8o7Xy0jjU6B1CkqoQCWfc4fQ7wD6r_UMzqY1DJtKY3jxSz92EpwC27KvMA9cHJkLE';
         let publicKey = null;
 
@@ -149,6 +185,12 @@ export default function SettingsApp({
 
         if (!publicKey) publicKey = KNOWN_VAPID_PUBLIC_KEY;
 
+        // Desuscribir token previo para forzar una suscripción limpia y renovada
+        const existingSub = await reg.pushManager.getSubscription();
+        if (existingSub) {
+          try { await existingSub.unsubscribe(); } catch (_) {}
+        }
+
         // Convertir clave base64 a Uint8Array
         const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
         const base64 = (publicKey + padding).replace(/\-/g, '+').replace(/_/g, '/');
@@ -163,17 +205,26 @@ export default function SettingsApp({
           applicationServerKey: outputArray
         });
 
-        await fetch('/api/push/subscribe', {
+        let subRes = await fetch('/api/push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ subscription: sub, user: currentUser })
-        }).catch(() => null);
+        });
+        if (!subRes.ok) {
+          await fetch('/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription: sub, user: currentUser })
+          }).catch(() => {});
+        }
 
         setPushStatus('enabled');
+        setTestFeedback('✅ ¡Dispositivo registrado con éxito en el servidor!');
+        setTimeout(() => setTestFeedback(''), 6000);
       }
     } catch (err) {
       console.error('Error conmutando push:', err);
-      alert('Error al configurar notificaciones push: ' + (err.message || err));
+      setTestFeedback(`❌ Error al conectar: ${err.message || err}`);
     } finally {
       setPushLoading(false);
     }
@@ -181,16 +232,57 @@ export default function SettingsApp({
 
   const handleTestPush = async () => {
     setTestSent(true);
+    setTestFeedback('📨 Enviando aviso de prueba a tu móvil...');
     try {
-      await fetch('/api/push/test-user', {
+      if ('serviceWorker' in navigator) {
+        let reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) reg = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+        if (reg && reg.pushManager) {
+          let sub = await reg.pushManager.getSubscription();
+          if (!sub) {
+            await handleTogglePush(true);
+            return;
+          } else {
+            // Asegurar siempre el registro actualizado en el backend
+            await fetch('/api/push/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ subscription: sub, user: currentUser })
+            }).catch(() => {});
+          }
+        }
+      }
+
+      let res = await fetch('/api/push/test-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user: currentUser })
       });
-      setTimeout(() => setTestSent(false), 3000);
+      if (!res.ok) {
+        res = await fetch('/push/test-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: currentUser })
+        });
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setTestFeedback('🎉 ¡Notificación enviada con éxito! Mira la barra superior de tu móvil.');
+      } else if (data.no_subscription) {
+        setTestFeedback('⚠️ Re-registrando dispositivo en el servidor...');
+        await handleTogglePush(true);
+        setTimeout(handleTestPush, 1000);
+      } else {
+        setTestFeedback(`⚠️ ${data.error || 'No se pudo entregar el aviso.'}`);
+      }
+      setTimeout(() => setTestSent(false), 5000);
+      setTimeout(() => setTestFeedback(''), 10000);
     } catch (err) {
       console.error(err);
+      setTestFeedback('❌ Error de conexión al enviar prueba.');
       setTestSent(false);
+      setTimeout(() => setTestFeedback(''), 5000);
     }
   };
 
@@ -278,25 +370,57 @@ export default function SettingsApp({
             </button>
           </div>
 
-          {pushStatus === 'enabled' && (
-            <div style={{ marginTop: '0.75rem', paddingTop: '0.6rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ marginTop: '0.75rem', paddingTop: '0.6rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button
+                type="button"
                 onClick={handleTestPush}
-                disabled={testSent}
+                disabled={testSent || pushLoading}
                 style={{
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
                   borderRadius: '8px',
-                  color: '#fff',
-                  padding: '0.35rem 0.8rem',
-                  fontSize: '0.75rem',
+                  color: '#60a5fa',
+                  padding: '0.4rem 0.85rem',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
                   cursor: 'pointer'
                 }}
               >
-                {testSent ? '🚀 ¡Notificación enviada!' : '📲 Probar Notificación Ahora'}
+                {testSent ? '🚀 Enviando...' : '📲 Probar Notificación Ahora'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleTogglePush(true)}
+                disabled={pushLoading}
+                title="Renueva el token con Google FCM y re-registra tu móvil en la base de datos"
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  color: '#e2e8f0',
+                  padding: '0.4rem 0.85rem',
+                  fontSize: '0.76rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 Reconectar / Sincronizar Móvil
               </button>
             </div>
-          )}
+
+            {testFeedback && (
+              <div style={{
+                fontSize: '0.76rem',
+                color: testFeedback.startsWith('🎉') || testFeedback.startsWith('✅') ? '#34d399' : '#f87171',
+                marginTop: '0.2rem',
+                lineHeight: 1.35
+              }}>
+                {testFeedback}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Sección: Notificaciones por Aplicación */}

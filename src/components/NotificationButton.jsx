@@ -62,6 +62,15 @@ export default function NotificationButton({ currentUser }) {
         try {
           localStorage.setItem('casita_push_subscribed', active ? 'true' : 'false');
         } catch (_) {}
+
+        // Sincronizar en segundo plano con el servidor para garantizar que MongoDB tiene este móvil registrado
+        if (active && sub) {
+          fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription: sub, user: currentUser })
+          }).catch(() => {});
+        }
       }
     } catch (err) {
       console.warn('Error comprobando estado de suscripción push:', err);
@@ -130,15 +139,19 @@ export default function NotificationButton({ currentUser }) {
         publicKey = KNOWN_VAPID_PUBLIC_KEY;
       }
 
-      // 4. Suscribir en el navegador
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) {
-        const convertedKey = urlBase64ToUint8Array(publicKey);
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: convertedKey
-        });
+      // 4. Suscribir en el navegador (limpiando tokens obsoletos para forzar una suscripción limpia con Google FCM)
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) {
+        try {
+          await existing.unsubscribe();
+        } catch (_) {}
       }
+
+      const convertedKey = urlBase64ToUint8Array(publicKey);
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedKey
+      });
 
       // 5. Registrar en MongoDB Atlas a través del backend
       let subSuccess = false;
@@ -206,8 +219,24 @@ export default function NotificationButton({ currentUser }) {
   // Enviar notificación de prueba para comprobar que suena y llega al instante
   const handleTestNotification = async () => {
     setTestingPush(true);
-    setStatusMessage('📨 Enviando aviso de prueba a tu móvil/PC...');
+    setStatusMessage('📨 Sincronizando y enviando aviso a tu móvil...');
     try {
+      const reg = await getRegistration();
+      if (reg && reg.pushManager) {
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          await handleSubscribe();
+          return;
+        } else {
+          // Re-sincronizar siempre con el backend para garantizar que el servidor tiene la clave activa
+          await fetch('/api/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription: sub, user: currentUser })
+          }).catch(() => {});
+        }
+      }
+
       let res = await fetch('/api/push/test-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -220,11 +249,12 @@ export default function NotificationButton({ currentUser }) {
           body: JSON.stringify({ user: currentUser })
         });
       }
-      const text = await res.text();
-      let data = {};
-      try { data = JSON.parse(text); } catch (_) {}
-      if (res.ok) {
-        setStatusMessage('🎉 ¡Aviso enviado! Mira la barra superior de tu dispositivo o el centro de notificaciones.');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setStatusMessage('🎉 ¡Aviso enviado con éxito! Mira la barra superior de tu móvil.');
+      } else if (data.no_subscription) {
+        setStatusMessage('⚠️ Renovando suscripción en el servidor...');
+        await handleSubscribe();
       } else {
         setStatusMessage(`⚠️ ${data.error || 'Error al enviar prueba'}`);
       }

@@ -74,21 +74,39 @@ const getOtherUser = (user) => user === 'Ismael' ? 'Sandra' : 'Ismael';
 // Helper para enviar notificación push
 async function sendPushNotification(targetUser, title, body, url) {
   const subscriptions = db.getSubscriptionsForUser(targetUser);
+  if (!subscriptions || subscriptions.length === 0) {
+    console.warn(`[Push] No hay suscripciones activas registradas para ${targetUser}`);
+    return { sent: 0, failed: 0, total: 0, error: `No hay ningún dispositivo suscrito a push para ${targetUser}` };
+  }
+
+  console.log(`[Push] Enviando a ${subscriptions.length} suscripciones para ${targetUser}...`);
   const payload = JSON.stringify({ title, body, url });
+  let sentCount = 0;
+  let failedCount = 0;
+  let lastError = null;
 
   const promises = subscriptions.map(sub => {
     return webpush.sendNotification(sub.subscription, payload)
+      .then(() => {
+        sentCount++;
+      })
       .catch(err => {
+        failedCount++;
+        lastError = err.message || `HTTP ${err.statusCode}`;
         if (err.statusCode === 410 || err.statusCode === 404) {
           console.log(`Eliminando suscripción inválida de ${targetUser}:`, sub.subscription.endpoint);
           db.removeSubscription(sub.subscription.endpoint);
         } else {
-          console.error(`Error de red al enviar push a ${targetUser}:`, err.message);
+          console.error(`Error de red al enviar push a ${targetUser} (${err.statusCode}):`, err.message);
         }
       });
   });
 
   await Promise.all(promises);
+  if (failedCount > 0) {
+    await flushPendingMongoWrites();
+  }
+  return { sent: sentCount, failed: failedCount, total: subscriptions.length, error: lastError };
 }
 
 // Helper para enviar alerta por correo electrónico
@@ -434,18 +452,37 @@ app.post(['/api/push/test-user', '/push/test-user'], async (req, res) => {
     await ensureServerReady();
     const { user } = req.body;
     const targetUser = user || 'Ismael';
-    await sendPushNotification(
+    const result = await sendPushNotification(
       targetUser,
       '🔔 Notificación de Prueba · Casita Hub',
       `¡Funciona perfecto 24/7 en Vercel! Dispositivo conectado para ${targetUser} 🏠✨`,
       '/'
     );
     res.setHeader('Content-Type', 'application/json');
-    res.json({ success: true, message: `Notificación de prueba enviada con éxito a ${targetUser}` });
+    if (result && result.sent > 0) {
+      return res.json({
+        success: true,
+        sent: result.sent,
+        message: `¡Notificación enviada con éxito a tu dispositivo (${targetUser})!`
+      });
+    } else if (result && result.total === 0) {
+      return res.status(400).json({
+        success: false,
+        sent: 0,
+        no_subscription: true,
+        error: `El servidor no tiene registrado ningún móvil para ${targetUser}. Por favor, pulsa en 'Reconectar / Activar Push'.`
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        sent: 0,
+        error: result?.error || 'No se pudo entregar el aviso push a los servidores de Google FCM.'
+      });
+    }
   } catch (error) {
     console.error('Error al enviar prueba push:', error);
     res.setHeader('Content-Type', 'application/json');
-    res.status(500).json({ error: 'Error al enviar notificación de prueba' });
+    res.status(500).json({ error: error.message || 'Error al enviar notificación de prueba' });
   }
 });
 

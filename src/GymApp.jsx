@@ -1928,13 +1928,17 @@ function GymApp({ onBackToCasita }) {
                   background: 'transparent',
                   border: 'none',
                   color: '#64748b',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
                   cursor: 'pointer',
-                  marginTop: '0.3rem'
+                  marginTop: '0.4rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
                 }}
               >
-                ← Volver a Casita Hub
+                <span>‹</span>
+                <span>Volver a CasitaOS</span>
               </button>
             )}
           </form>
@@ -1954,17 +1958,22 @@ function GymApp({ onBackToCasita }) {
                 type="button"
                 onClick={onBackToCasita}
                 style={{
-                  background: '#f1f5f9',
-                  border: '1px solid #cbd5e1',
-                  color: '#334155',
-                  borderRadius: '8px',
-                  padding: '0.35rem 0.55rem',
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
-                  cursor: 'pointer'
+                  background: 'rgba(255, 255, 255, 0.9)',
+                  border: '1.5px solid #cbd5e1',
+                  color: '#0f172a',
+                  borderRadius: '999px',
+                  padding: '0.45rem 0.85rem',
+                  fontSize: '0.82rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem'
                 }}
               >
-                🏠 Casita
+                <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>‹</span>
+                <span>Inicio</span>
               </button>
             )}
             <div>

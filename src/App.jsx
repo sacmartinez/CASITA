@@ -22,6 +22,22 @@ import PlatesModal from './components/PlatesModal';
 import SharedNotesApp from './components/SharedNotesApp';
 import CalendarEventsApp from './components/CalendarEventsApp';
 import SettingsApp from './components/SettingsApp';
+import WeatherApp from './components/WeatherApp';
+
+const APP_NAMES = {
+  organizer: '🧭 Mi Día',
+  gym: '🏋️ Casita Gym',
+  shopping: '🛒 Supermercado',
+  expenses: '💰 Finanzas',
+  planning: '🍽️ Comidas y Menú',
+  tasks: '📋 Tareas del Hogar',
+  care: '🐹 Jerbis',
+  warranties: '🏍️ Vehículos y Garantías',
+  notes: '📝 Notas Compartidas',
+  calendar: '📅 Calendario y Eventos',
+  weather: '🌦️ El Tiempo',
+  settings: '⚙️ Ajustes del Sistema'
+};
 
 
 function App() {
@@ -263,38 +279,20 @@ function App() {
 
       {/* Barra superior nativa de retorno cuando estamos dentro de una app en Modo Ecosistema */}
       {isBetaLauncher && activeTab !== 'launcher' && (
-        <div className="in-app-launcher-bar">
+        <div className="os-in-app-bar">
           <button 
-            className="in-app-back-btn" 
+            className="os-in-app-back-btn" 
             onClick={() => {
               setActiveTab('launcher');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            title="Volver a CasitaOS"
+            title="Volver al menú de CasitaOS"
           >
-            <span>←</span>
-            <span>CasitaOS</span>
+            <span className="os-back-arrow">‹</span>
+            <span className="os-back-text">Inicio</span>
           </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <button
-              onClick={() => setActiveTab('settings')}
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid var(--glass-border)',
-                borderRadius: '8px',
-                padding: '0.3rem 0.6rem',
-                color: '#fff',
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.3rem'
-              }}
-              title="Ajustes del Sistema"
-            >
-              <span>⚙️</span>
-              <span style={{ fontSize: '0.72rem' }}>Ajustes</span>
-            </button>
+          <div className="os-in-app-current-pill">
+            {APP_NAMES[activeTab] || 'CasitaOS'}
           </div>
         </div>
       )}
@@ -337,6 +335,13 @@ function App() {
       {activeTab === 'calendar' && (
         <div style={{ padding: '0 1rem 1.5rem 1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
           <CalendarEventsApp currentUser={currentUser} />
+        </div>
+      )}
+
+      {/* App: El Tiempo (Previsión 7 días en Carabanchel, Alcobendas, Ventas, Centro) */}
+      {activeTab === 'weather' && (
+        <div style={{ padding: '0 0.5rem 2rem 0.5rem', maxWidth: '720px', margin: '0 auto', width: '100%' }}>
+          <WeatherApp />
         </div>
       )}
 
@@ -415,7 +420,7 @@ function App() {
       )}
 
       {/* Grid de herramientas principales (Shopping, Expenses, Tasks, Jerbis) */}
-      {activeTab !== 'home' && activeTab !== 'launcher' && activeTab !== 'planning' && activeTab !== 'gym' && activeTab !== 'warranties' && activeTab !== 'organizer' && activeTab !== 'notes' && activeTab !== 'calendar' && activeTab !== 'settings' && (
+      {activeTab !== 'home' && activeTab !== 'launcher' && activeTab !== 'planning' && activeTab !== 'gym' && activeTab !== 'warranties' && activeTab !== 'organizer' && activeTab !== 'notes' && activeTab !== 'calendar' && activeTab !== 'settings' && activeTab !== 'weather' && (
         <main className={`dashboard-grid ${isMobile ? 'mobile-tab-view' : ''}`}>
           {/* LISTA DE COMPRAS */}
           {showSection('shopping') && (

@@ -18,6 +18,15 @@ export default function CasitaLauncher({
   const [tasksCount, setTasksCount] = useState(0);
   const [careAlert, setCareAlert] = useState(false);
   const [platesProgress, setPlatesProgress] = useState(0);
+  const [weatherBadge, setWeatherBadge] = useState(() => {
+    try {
+      const p = localStorage.getItem('casita_weather_today_rain_prob');
+      return p && Number(p) >= 40 ? `🌧️ ${p}%` : null;
+    } catch (_) {
+      return null;
+    }
+  });
+  const [quickWeather, setQuickWeather] = useState(null);
 
   // Reloj digital en vivo
   useEffect(() => {
@@ -26,6 +35,31 @@ export default function CasitaLauncher({
       setCurrentTime(d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }));
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Carga del tiempo para alerta de lluvia en launcher
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLauncherWeather = async () => {
+      try {
+        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=40.3833&longitude=-3.7333&current=temperature_2m,weather_code&daily=precipitation_probability_max,precipitation_sum&timezone=Europe%2FMadrid');
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          const prob = data.daily?.precipitation_probability_max?.[0] || 0;
+          const temp = Math.round(data.current?.temperature_2m || 15);
+          const isRain = prob >= 40;
+          setQuickWeather({ temp, prob, isRain });
+          if (isRain) {
+            setWeatherBadge(`🌧️ ${prob}%`);
+          } else {
+            setWeatherBadge(null);
+          }
+          localStorage.setItem('casita_weather_today_rain_prob', prob);
+        }
+      } catch (_) {}
+    };
+    fetchLauncherWeather();
+    return () => { isMounted = false; };
   }, []);
 
   // Carga de badges de notificación en tiempo real
@@ -198,6 +232,16 @@ export default function CasitaLauncher({
         action: () => onOpenApp('calendar')
       },
       {
+        id: 'weather',
+        name: 'El Tiempo',
+        icon: '🌦️',
+        gradient: 'linear-gradient(135deg, #0284c7, #0369a1)',
+        badge: weatherBadge || '7 días',
+        badgeType: weatherBadge ? 'warning' : 'normal',
+        keywords: ['tiempo', 'clima', 'lluvia', 'temperatura', 'carabanchel', 'alcobendas', 'ventas', 'madrid', 'paraguas', 'prevision'],
+        action: () => onOpenApp('weather')
+      },
+      {
         id: 'ajustes',
         name: 'Ajustes',
         icon: '⚙️',
@@ -210,7 +254,7 @@ export default function CasitaLauncher({
     ];
 
     return apps;
-  }, [currentUser, shoppingCount, tasksCount, careAlert, platesProgress, onOpenApp, onOpenSettings, onOpenPlates]);
+  }, [currentUser, shoppingCount, tasksCount, careAlert, platesProgress, weatherBadge, onOpenApp, onOpenSettings, onOpenPlates]);
 
   // Filtrado reactivo en la barra de búsqueda
   const filteredApps = useMemo(() => {
@@ -261,6 +305,35 @@ export default function CasitaLauncher({
             <span>Hola, {currentUser}</span>
           </span>
         </div>
+
+        {quickWeather && (
+          <button
+            type="button"
+            onClick={() => onOpenApp('weather')}
+            style={{
+              marginTop: '0.4rem',
+              background: quickWeather.isRain ? 'rgba(2, 132, 199, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+              border: quickWeather.isRain ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '999px',
+              padding: '0.35rem 0.85rem',
+              color: '#ffffff',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem'
+            }}
+            title="Abrir El Tiempo (Previsión 7 días)"
+          >
+            <span>📍 Carabanchel · {quickWeather.temp}°C {quickWeather.isRain ? '🌧️' : '⛅'}</span>
+            {quickWeather.isRain ? (
+              <span style={{ color: '#38bdf8', fontWeight: 800 }}>({quickWeather.prob}% lluvia hoy)</span>
+            ) : (
+              <span style={{ color: '#94a3b8' }}>({quickWeather.prob}% lluvia)</span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Buscador de Apps y Servicios */}

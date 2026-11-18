@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './CasitaLauncher.css';
 
 function formatTimeAgo(isoString) {
@@ -62,6 +62,49 @@ export default function CasitaLauncher({
   const [notificationHistory, setNotificationHistory] = useState([]);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
+
+  // --- SMART WIDGETS (Pantalla de Inicio) ---
+  const [activeWidgetIndex, setActiveWidgetIndex] = useState(0); // 0: Jerbis 1-Tap, 1: Comidas hoy, 2: Finanzas 50/50
+  const [mealsToday, setMealsToday] = useState(null);
+  const [expensesSummary, setExpensesSummary] = useState(null);
+  const [jerbisStatus, setJerbisStatus] = useState({
+    waterPending: false,
+    foodPending: false,
+    hoursWater: 0,
+    hoursFood: 0,
+    lastWaterDate: 'Sin datos',
+    lastFoodDate: 'Sin datos',
+    waterBy: '',
+    foodBy: ''
+  });
+  const [oneTapLoading, setOneTapLoading] = useState(null); // 'Agua' | 'Comida' | null
+  const [toastMessage, setToastMessage] = useState('');
+
+  // --- ACCIONES RÁPIDAS (Quick Actions / 3D Touch) ---
+  const [quickActionMenu, setQuickActionMenu] = useState(null); // app object
+  const [quickAddShoppingModal, setQuickAddShoppingModal] = useState(false);
+  const [quickShoppingText, setQuickShoppingText] = useState('');
+  const [quickShoppingSupermarket, setQuickShoppingSupermarket] = useState('Mercadona');
+  const [quickShoppingSaving, setQuickShoppingSaving] = useState(false);
+
+  const [quickAddExpenseModal, setQuickAddExpenseModal] = useState(false);
+  const [quickExpenseDesc, setQuickExpenseDesc] = useState('');
+  const [quickExpenseAmount, setQuickExpenseAmount] = useState('');
+  const [quickExpenseCategory, setQuickExpenseCategory] = useState('Supermercado');
+  const [quickExpensePaidBy, setQuickExpensePaidBy] = useState(currentUser);
+  const [quickExpenseSaving, setQuickExpenseSaving] = useState(false);
+
+  // Control táctil de pulsación prolongada (Long-press 450ms)
+  const longPressTimerRef = useRef(null);
+  const touchStartPosRef = useRef({ x: 0, y: 0 });
+  const isLongPressTriggeredRef = useRef(false);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(prev => prev === msg ? '' : prev);
+    }, 3200);
+  };
 
   // Reloj digital en vivo
   useEffect(() => {
@@ -138,16 +181,18 @@ export default function CasitaLauncher({
     return () => { isMounted = false; };
   }, []);
 
-  // Carga de badges de notificación en tiempo real
+  // Carga de badges de notificación en tiempo real y datos para Smart Widgets
   useEffect(() => {
     let isMounted = true;
     const fetchBadges = async () => {
       try {
-        const [shopRes, taskRes, careRes, platesRes] = await Promise.all([
+        const [shopRes, taskRes, careRes, platesRes, planRes, expRes] = await Promise.all([
           fetch('/api/shopping').catch(() => null),
           fetch('/api/tasks').catch(() => null),
           fetch('/api/care').catch(() => null),
-          fetch('/api/plates').catch(() => null)
+          fetch('/api/plates').catch(() => null),
+          fetch('/api/planning').catch(() => null),
+          fetch('/api/expenses').catch(() => null)
         ]);
 
         if (shopRes && shopRes.ok) {
@@ -187,6 +232,17 @@ export default function CasitaLauncher({
             } else {
               setCareAlertBadge(null); // ¡Sin burbuja si está atendido hoy!
             }
+
+            setJerbisStatus({
+              waterPending,
+              foodPending,
+              hoursWater: Math.round(hoursWater),
+              hoursFood: Math.round(hoursFood),
+              lastWaterDate: lastWater ? formatTimeAgo(lastWater.timestamp) : 'Sin datos',
+              lastFoodDate: lastFood ? formatTimeAgo(lastFood.timestamp) : 'Sin datos',
+              waterBy: lastWater?.performedBy || '',
+              foodBy: lastFood?.performedBy || ''
+            });
           }
         }
 
@@ -195,6 +251,28 @@ export default function CasitaLauncher({
           if (isMounted && Array.isArray(platesData)) {
             setPlatesProgress(platesData.filter(p => p.completed).length);
           }
+        }
+
+        // Cargar menú del día para Widget Comidas
+        if (planRes && planRes.ok && isMounted) {
+          try {
+            const planData = await planRes.json();
+            if (Array.isArray(planData) && planData.length > 0) {
+              const todayStr = new Date().toISOString().split('T')[0];
+              const todayItem = planData.find(p => p.date === todayStr) || planData[0];
+              setMealsToday(todayItem);
+            }
+          } catch (_) {}
+        }
+
+        // Cargar balance de gastos para Widget Finanzas
+        if (expRes && expRes.ok && isMounted) {
+          try {
+            const expData = await expRes.json();
+            if (expData && expData.totals) {
+              setExpensesSummary(expData.totals);
+            }
+          } catch (_) {}
         }
 
         // Cargar historial de notificaciones
@@ -256,6 +334,345 @@ export default function CasitaLauncher({
         body: JSON.stringify({ user: currentUser })
       });
     } catch (_) {}
+  };
+
+  // --- 1-TAP ACTION CUIDADO JERBIS (WIDGET Y ACCIÓN RÁPIDA) ---
+  const handleQuickCareAction = async (action) => {
+    setOneTapLoading(action);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(40);
+      const res = await fetch('/api/care', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: 'Jerbos (Kalu & Lua)',
+          action,
+          performedBy: currentUser
+        })
+      });
+      if (res.ok) {
+        showToast(`✅ ¡${action} registrado por ${currentUser}!`);
+        setJerbisStatus(prev => ({
+          ...prev,
+          [`${action === 'Agua' ? 'water' : 'food'}Pending`]: false,
+          [`${action === 'Agua' ? 'hoursWater' : 'hoursFood'}`]: 0,
+          [`${action === 'Agua' ? 'lastWaterDate' : 'lastFoodDate'}`]: 'Ahora',
+          [`${action === 'Agua' ? 'waterBy' : 'foodBy'}`]: currentUser
+        }));
+        if (action === 'Agua' && !jerbisStatus.foodPending) {
+          setCareAlertBadge(null);
+        } else if (action === 'Comida' && !jerbisStatus.waterPending) {
+          setCareAlertBadge(null);
+        } else if (action === 'Agua') {
+          setCareAlertBadge('⚠️ Comida');
+        } else {
+          setCareAlertBadge('⚠️ Agua');
+        }
+      } else {
+        showToast('❌ No se pudo guardar el cuidado');
+      }
+    } catch (_) {
+      showToast('❌ Error de conexión al registrar cuidado');
+    } finally {
+      setOneTapLoading(null);
+      setQuickActionMenu(null);
+    }
+  };
+
+  // --- SUBMIT DE AÑADIR A LA COMPRA RÁPIDO ---
+  const handleQuickAddShoppingSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!quickShoppingText.trim()) return;
+    setQuickShoppingSaving(true);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(40);
+      const res = await fetch('/api/shopping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: quickShoppingText.trim(),
+          supermarket: quickShoppingSupermarket,
+          addedBy: currentUser
+        })
+      });
+      if (res.ok) {
+        setShoppingCount(prev => prev + 1);
+        showToast(`🛒 "${quickShoppingText.trim()}" añadido a la compra`);
+        setQuickShoppingText('');
+        setQuickAddShoppingModal(false);
+      } else {
+        showToast('❌ Error al añadir a la compra');
+      }
+    } catch (_) {
+      showToast('❌ Error de red');
+    } finally {
+      setQuickShoppingSaving(false);
+    }
+  };
+
+  // --- SUBMIT DE AÑADIR GASTO RÁPIDO ---
+  const handleQuickAddExpenseSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!quickExpenseDesc.trim() || !quickExpenseAmount) return;
+    setQuickExpenseSaving(true);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(40);
+      const res = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: quickExpenseDesc.trim(),
+          amount: parseFloat(quickExpenseAmount),
+          paidBy: quickExpensePaidBy,
+          category: quickExpenseCategory
+        })
+      });
+      if (res.ok) {
+        showToast(`💰 Gasto de ${quickExpenseAmount}€ guardado`);
+        setQuickExpenseDesc('');
+        setQuickExpenseAmount('');
+        setQuickAddExpenseModal(false);
+        // Refrescar balance
+        const expRes = await fetch('/api/expenses').catch(() => null);
+        if (expRes && expRes.ok) {
+          const expData = await expRes.json();
+          if (expData?.totals) setExpensesSummary(expData.totals);
+        }
+      } else {
+        showToast('❌ Error al registrar gasto');
+      }
+    } catch (_) {
+      showToast('❌ Error de red');
+    } finally {
+      setQuickExpenseSaving(false);
+    }
+  };
+
+  // --- GESTIÓN DE ACCIONES RÁPIDAS (LONG-PRESS / 3D TOUCH) ---
+  const handleTileTouchStart = (app, e) => {
+    isLongPressTriggeredRef.current = false;
+    const touch = e.touches[0];
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressTriggeredRef.current = true;
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(45);
+      setQuickActionMenu(app);
+    }, 450);
+  };
+
+  const handleTileTouchMove = (e) => {
+    if (!longPressTimerRef.current) return;
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
+    const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
+    if (dx > 10 || dy > 10) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTileTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTileClick = (app) => {
+    if (isLongPressTriggeredRef.current) {
+      isLongPressTriggeredRef.current = false;
+      return;
+    }
+    app.action();
+  };
+
+  const handleTileContextMenu = (app, e) => {
+    e.preventDefault();
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(45);
+    setQuickActionMenu(app);
+  };
+
+  const getAppQuickActions = (app) => {
+    if (!app) return [];
+    switch (app.id) {
+      case 'shopping':
+        return [
+          {
+            icon: '➕',
+            title: 'Añadir producto rápido',
+            desc: 'Apunta sin entrar a la app',
+            action: () => {
+              setQuickActionMenu(null);
+              setQuickAddShoppingModal(true);
+            }
+          },
+          {
+            icon: '🛒',
+            title: 'Ver lista completa',
+            desc: `${shoppingCount} productos pendientes`,
+            action: () => {
+              setQuickActionMenu(null);
+              app.action();
+            }
+          }
+        ];
+      case 'jerbis':
+        return [
+          {
+            icon: '💧',
+            title: 'Puse Agua ahora',
+            desc: jerbisStatus.waterPending ? '⚠️ Falta hoy' : `✓ ${jerbisStatus.lastWaterDate}`,
+            action: () => handleQuickCareAction('Agua')
+          },
+          {
+            icon: '🥣',
+            title: 'Puse Comida ahora',
+            desc: jerbisStatus.foodPending ? '⚠️ Falta hoy' : `✓ ${jerbisStatus.lastFoodDate}`,
+            action: () => handleQuickCareAction('Comida')
+          },
+          {
+            icon: '📖',
+            title: 'Abrir Diario Jerbis',
+            desc: 'Ver fotos y bitácora de roedores',
+            action: () => {
+              setQuickActionMenu(null);
+              onOpenApp('care', 'journal');
+            }
+          }
+        ];
+      case 'gym':
+        return [
+          {
+            icon: '👫',
+            title: 'Entrenar Juntos (Ismael & Sandra)',
+            desc: 'Modo cooperativo con descansos sincronizados',
+            action: () => {
+              setQuickActionMenu(null);
+              app.action();
+            }
+          },
+          {
+            icon: '👤',
+            title: 'Entrenar Solo',
+            desc: 'Rutina individual personalizada',
+            action: () => {
+              setQuickActionMenu(null);
+              app.action();
+            }
+          }
+        ];
+      case 'comidas':
+        return [
+          {
+            icon: '📅',
+            title: 'Menú Semanal',
+            desc: 'Planificación de comidas y cenas',
+            action: () => {
+              setQuickActionMenu(null);
+              onOpenApp('planning', 'weekly');
+            }
+          },
+          {
+            icon: '🍽️',
+            title: 'Recetario Casero',
+            desc: 'Consultar o guardar recetas',
+            action: () => {
+              setQuickActionMenu(null);
+              onOpenApp('planning', 'recipes');
+            }
+          }
+        ];
+      case 'expenses':
+        return [
+          {
+            icon: '🧾',
+            title: 'Añadir gasto rápido',
+            desc: 'Gasto 50/50 en segundos',
+            action: () => {
+              setQuickActionMenu(null);
+              setQuickAddExpenseModal(true);
+            }
+          },
+          {
+            icon: '📊',
+            title: 'Ver balance y cuentas',
+            desc: expensesSummary?.ower ? `${expensesSummary.ower} debe ${expensesSummary.amountOwed?.toFixed(2)}€` : 'Gastos al día',
+            action: () => {
+              setQuickActionMenu(null);
+              app.action();
+            }
+          }
+        ];
+      case 'tareas':
+        return [
+          {
+            icon: '📋',
+            title: 'Tareas del Hogar',
+            desc: `${tasksCount} pendientes`,
+            action: () => {
+              setQuickActionMenu(null);
+              onOpenApp('tasks', 'chores');
+            }
+          },
+          {
+            icon: '🔧',
+            title: 'Bitácora Casa',
+            desc: 'Mantenimiento y averías',
+            action: () => {
+              setQuickActionMenu(null);
+              onOpenApp('tasks', 'maintenance');
+            }
+          }
+        ];
+      case 'weather':
+        return [
+          {
+            icon: '📍',
+            title: 'Previsión 7 Días',
+            desc: 'Carabanchel, Alcobendas, Ventas',
+            action: () => {
+              setQuickActionMenu(null);
+              app.action();
+            }
+          }
+        ];
+      case 'organizer':
+        return [
+          {
+            icon: '🧭',
+            title: 'Mi Día (Ismael)',
+            desc: 'Horario, Soundpulse, Gamberros',
+            action: () => {
+              setQuickActionMenu(null);
+              app.action();
+            }
+          }
+        ];
+      case 'matriculas':
+        return [
+          {
+            icon: '🚘',
+            title: 'Juego de Matrículas',
+            desc: `${platesProgress} de 100 avistadas`,
+            action: () => {
+              setQuickActionMenu(null);
+              onOpenPlates();
+            }
+          }
+        ];
+      default:
+        return [
+          {
+            icon: '🚀',
+            title: `Abrir ${app.name}`,
+            desc: 'Acceso directo a la aplicación',
+            action: () => {
+              setQuickActionMenu(null);
+              app.action();
+            }
+          }
+        ];
+    }
   };
 
   // Catálogo unificado y refinado de Apps CasitaOS (Sin burbujas falsas)
@@ -567,6 +984,194 @@ export default function CasitaLauncher({
         )}
       </div>
 
+      {/* 🎛️ SMART WIDGETS CAROUSEL (Estilo iOS / Android Smart Stack) */}
+      <div className="os-smart-widgets-wrapper">
+        <div className="os-widget-header-tabs">
+          <button
+            type="button"
+            className={`os-widget-tab-pill ${activeWidgetIndex === 0 ? 'active' : ''}`}
+            onClick={() => setActiveWidgetIndex(0)}
+          >
+            <span>🐹</span> Jerbis 1-Tap
+            {(jerbisStatus.waterPending || jerbisStatus.foodPending) && (
+              <span className="os-widget-mini-dot" />
+            )}
+          </button>
+          <button
+            type="button"
+            className={`os-widget-tab-pill ${activeWidgetIndex === 1 ? 'active' : ''}`}
+            onClick={() => setActiveWidgetIndex(1)}
+          >
+            <span>🍽️</span> Menú Hoy
+          </button>
+          <button
+            type="button"
+            className={`os-widget-tab-pill ${activeWidgetIndex === 2 ? 'active' : ''}`}
+            onClick={() => setActiveWidgetIndex(2)}
+          >
+            <span>💰</span> Balanza 50/50
+          </button>
+        </div>
+
+        {/* Card 0: Widget Jerbis 1-Tap */}
+        {activeWidgetIndex === 0 && (
+          <div className="os-smart-widget-card jerbis-card">
+            <div className="os-widget-top-row">
+              <div className="os-widget-title-group">
+                <span className="os-widget-badge-tag">🐹 Kalu & Lua</span>
+                <strong className="os-widget-main-title">Cuidados Diarios</strong>
+              </div>
+              <button
+                type="button"
+                className="os-widget-link-btn"
+                onClick={() => onOpenApp('care', 'logs')}
+                title="Ver historial completo"
+              >
+                Abrir App ›
+              </button>
+            </div>
+
+            <div className="os-widget-jerbis-actions">
+              {/* Botón 1-Tap Agua */}
+              <button
+                type="button"
+                className={`os-widget-action-btn ${jerbisStatus.waterPending ? 'pending' : 'completed'}`}
+                onClick={() => handleQuickCareAction('Agua')}
+                disabled={oneTapLoading === 'Agua'}
+              >
+                <div className="os-btn-left">
+                  <span className="os-btn-emoji">💧</span>
+                  <div className="os-btn-texts">
+                    <strong>Poner Agua</strong>
+                    <span className="os-btn-status">
+                      {oneTapLoading === 'Agua' ? 'Guardando...' : (
+                        jerbisStatus.waterPending
+                          ? `⚠️ Falta hoy (${jerbisStatus.hoursWater}h)`
+                          : `✓ Lista (${jerbisStatus.lastWaterDate}${jerbisStatus.waterBy ? ` · ${jerbisStatus.waterBy}` : ''})`
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <span className="os-btn-check-icon">
+                  {oneTapLoading === 'Agua' ? '⏳' : (jerbisStatus.waterPending ? '➕' : '✓')}
+                </span>
+              </button>
+
+              {/* Botón 1-Tap Comida */}
+              <button
+                type="button"
+                className={`os-widget-action-btn ${jerbisStatus.foodPending ? 'pending' : 'completed'}`}
+                onClick={() => handleQuickCareAction('Comida')}
+                disabled={oneTapLoading === 'Comida'}
+              >
+                <div className="os-btn-left">
+                  <span className="os-btn-emoji">🥣</span>
+                  <div className="os-btn-texts">
+                    <strong>Poner Comida</strong>
+                    <span className="os-btn-status">
+                      {oneTapLoading === 'Comida' ? 'Guardando...' : (
+                        jerbisStatus.foodPending
+                          ? `⚠️ Falta hoy (${jerbisStatus.hoursFood}h)`
+                          : `✓ Lista (${jerbisStatus.lastFoodDate}${jerbisStatus.foodBy ? ` · ${jerbisStatus.foodBy}` : ''})`
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <span className="os-btn-check-icon">
+                  {oneTapLoading === 'Comida' ? '⏳' : (jerbisStatus.foodPending ? '➕' : '✓')}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Card 1: Widget Menú de Hoy */}
+        {activeWidgetIndex === 1 && (
+          <div className="os-smart-widget-card meals-card">
+            <div className="os-widget-top-row">
+              <div className="os-widget-title-group">
+                <span className="os-widget-badge-tag">🍽️ Comidas</span>
+                <strong className="os-widget-main-title">
+                  {mealsToday?.day ? `Menú de ${mealsToday.day}` : 'Menú de Hoy'}
+                </strong>
+              </div>
+              <button
+                type="button"
+                className="os-widget-link-btn"
+                onClick={() => onOpenApp('planning', 'weekly')}
+                title="Abrir menú semanal"
+              >
+                Ver Semana ›
+              </button>
+            </div>
+
+            <div className="os-widget-meals-content">
+              <div className="os-meal-row">
+                <span className="os-meal-badge lunch">☀️ Comida</span>
+                <span className="os-meal-name">
+                  {mealsToday?.comida ? mealsToday.comida : 'Sin definir todavía'}
+                </span>
+              </div>
+              <div className="os-meal-row">
+                <span className="os-meal-badge dinner">🌙 Cena</span>
+                <span className="os-meal-name">
+                  {mealsToday?.cena ? mealsToday.cena : 'Sin definir todavía'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Card 2: Widget Balanza 50/50 */}
+        {activeWidgetIndex === 2 && (
+          <div className="os-smart-widget-card expenses-card">
+            <div className="os-widget-top-row">
+              <div className="os-widget-title-group">
+                <span className="os-widget-badge-tag">💰 Finanzas 50/50</span>
+                <strong className="os-widget-main-title">Estado de Cuentas</strong>
+              </div>
+              <button
+                type="button"
+                className="os-widget-link-btn"
+                onClick={() => onOpenApp('expenses')}
+                title="Abrir app de gastos"
+              >
+                Ver Gastos ›
+              </button>
+            </div>
+
+            <div className="os-widget-balance-content">
+              {expensesSummary?.ower ? (
+                <div className="os-balance-owed-box">
+                  <span className="os-owed-icon">⚖️</span>
+                  <div>
+                    <strong className="os-owed-text">
+                      {expensesSummary.ower} debe a {expensesSummary.ower === 'Ismael' ? 'Sandra' : 'Ismael'}:
+                    </strong>
+                    <div className="os-owed-amount">{expensesSummary.amountOwed?.toFixed(2)} €</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="os-balance-peace-box">
+                  <span className="os-peace-icon">🤝</span>
+                  <div>
+                    <strong className="os-peace-text">¡Gastos 50/50 al día!</strong>
+                    <span className="os-peace-sub">No hay saldo deudor pendiente</span>
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                className="os-quick-add-expense-pill"
+                onClick={() => setQuickAddExpenseModal(true)}
+              >
+                ➕ Añadir Gasto Rápido
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Buscador de Apps y Servicios */}
       <div className="os-search-bar-wrapper">
         <span className="os-search-mag-icon">🔍</span>
@@ -596,8 +1201,12 @@ export default function CasitaLauncher({
           <button
             key={app.id}
             className="os-app-tile"
-            onClick={app.action}
-            title={app.name}
+            onClick={() => handleTileClick(app)}
+            onTouchStart={(e) => handleTileTouchStart(app, e)}
+            onTouchMove={handleTileTouchMove}
+            onTouchEnd={handleTileTouchEnd}
+            onContextMenu={(e) => handleTileContextMenu(app, e)}
+            title={`${app.name} (Mantén pulsado para acciones rápidas)`}
           >
             <div className="os-icon-holder">
               <div
@@ -623,8 +1232,12 @@ export default function CasitaLauncher({
           <button
             key={app.id}
             className="os-dock-app-btn"
-            onClick={app.action}
-            title={app.name}
+            onClick={() => handleTileClick(app)}
+            onTouchStart={(e) => handleTileTouchStart(app, e)}
+            onTouchMove={handleTileTouchMove}
+            onTouchEnd={handleTileTouchEnd}
+            onContextMenu={(e) => handleTileContextMenu(app, e)}
+            title={`${app.name} (Mantén pulsado para acciones rápidas)`}
           >
             <div
               className="os-dock-squircle"
@@ -857,6 +1470,326 @@ export default function CasitaLauncher({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ==========================================================
+          MENÚ FLOTANTE DE ACCIONES RÁPIDAS (3D TOUCH / LONG-PRESS)
+          ========================================================== */}
+      {quickActionMenu && (
+        <div
+          className="os-quick-actions-overlay"
+          onClick={() => setQuickActionMenu(null)}
+        >
+          <div
+            className="os-quick-actions-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="os-quick-header">
+              <div className="os-quick-header-app">
+                <div
+                  className="os-quick-icon-preview"
+                  style={{ background: quickActionMenu.gradient }}
+                >
+                  <span>{quickActionMenu.icon}</span>
+                </div>
+                <div>
+                  <strong style={{ fontSize: '0.96rem', color: '#ffffff', display: 'block' }}>
+                    {quickActionMenu.name}
+                  </strong>
+                  <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                    Acciones Rápidas
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="os-quick-close-btn"
+                onClick={() => setQuickActionMenu(null)}
+                title="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="os-quick-actions-list">
+              {getAppQuickActions(quickActionMenu).map((action, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  className="os-quick-action-item"
+                  onClick={action.action}
+                >
+                  <span className="os-quick-action-icon">{action.icon}</span>
+                  <div className="os-quick-action-info">
+                    <strong>{action.title}</strong>
+                    {action.desc && <span>{action.desc}</span>}
+                  </div>
+                  <span className="os-quick-action-chevron">›</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================
+          MODAL RÁPIDO: AÑADIR A LA COMPRA DIRECTO
+          ========================================================== */}
+      {quickAddShoppingModal && (
+        <div
+          className="os-quick-input-modal"
+          onClick={() => setQuickAddShoppingModal(false)}
+        >
+          <div
+            className="os-quick-modal-box"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.9rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.4rem' }}>🛒</span>
+                <strong style={{ fontSize: '1rem', color: '#ffffff' }}>Añadir al Súper</strong>
+              </div>
+              <button
+                type="button"
+                className="os-quick-close-btn"
+                onClick={() => setQuickAddShoppingModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickAddShoppingSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+              <div>
+                <input
+                  type="text"
+                  placeholder="¿Qué falta? (ej. Leche de avena, plátanos...)"
+                  value={quickShoppingText}
+                  onChange={(e) => setQuickShoppingText(e.target.value)}
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1.5px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '12px',
+                    padding: '0.75rem 0.9rem',
+                    color: '#ffffff',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
+                  Supermercado:
+                </span>
+                <div className="os-quick-pill-select">
+                  {['Mercadona', 'Carrefour', 'Lidl', 'Día', 'Ahorramás', 'Otros'].map((superm) => (
+                    <button
+                      key={superm}
+                      type="button"
+                      className={`os-quick-select-option ${quickShoppingSupermarket === superm ? 'active' : ''}`}
+                      onClick={() => setQuickShoppingSupermarket(superm)}
+                    >
+                      {superm}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddShoppingModal(false)}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '0.7rem',
+                    color: '#94a3b8',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={quickShoppingSaving || !quickShoppingText.trim()}
+                  style={{
+                    flex: 2,
+                    background: 'linear-gradient(135deg, #d97706, #b45309)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '0.7rem',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(217, 119, 6, 0.4)'
+                  }}
+                >
+                  {quickShoppingSaving ? 'Añadiendo...' : '➕ Añadir a la Lista'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================
+          MODAL RÁPIDO: AÑADIR GASTO 50/50 DIRECTO
+          ========================================================== */}
+      {quickAddExpenseModal && (
+        <div
+          className="os-quick-input-modal"
+          onClick={() => setQuickAddExpenseModal(false)}
+        >
+          <div
+            className="os-quick-modal-box"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.9rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.4rem' }}>💰</span>
+                <strong style={{ fontSize: '1rem', color: '#ffffff' }}>Gasto Compartido 50/50</strong>
+              </div>
+              <button
+                type="button"
+                className="os-quick-close-btn"
+                onClick={() => setQuickAddExpenseModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickAddExpenseSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+              <div>
+                <input
+                  type="text"
+                  placeholder="Concepto (ej. Compra Mercadona, Cena...)"
+                  value={quickExpenseDesc}
+                  onChange={(e) => setQuickExpenseDesc(e.target.value)}
+                  autoFocus
+                  style={{
+                    width: '100%',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1.5px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '12px',
+                    padding: '0.75rem 0.9rem',
+                    color: '#ffffff',
+                    fontSize: '0.9rem',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="Importe en € (ej. 24.50)"
+                  value={quickExpenseAmount}
+                  onChange={(e) => setQuickExpenseAmount(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1.5px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '12px',
+                    padding: '0.75rem 0.9rem',
+                    color: '#ffffff',
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
+                  Pagado por:
+                </span>
+                <div className="os-quick-pill-select">
+                  {['Ismael', 'Sandra', 'Conjunta'].map((payer) => (
+                    <button
+                      key={payer}
+                      type="button"
+                      className={`os-quick-select-option ${quickExpensePaidBy === payer ? 'active' : ''}`}
+                      onClick={() => setQuickExpensePaidBy(payer)}
+                    >
+                      {payer}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
+                  Categoría:
+                </span>
+                <div className="os-quick-pill-select">
+                  {['Supermercado', 'Hogar', 'Ocio y Cenas', 'Jerbis', 'Mascotas', 'Otros'].map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`os-quick-select-option ${quickExpenseCategory === cat ? 'active' : ''}`}
+                      onClick={() => setQuickExpenseCategory(cat)}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.4rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddExpenseModal(false)}
+                  style={{
+                    flex: 1,
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '0.7rem',
+                    color: '#94a3b8',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={quickExpenseSaving || !quickExpenseDesc.trim() || !quickExpenseAmount}
+                  style={{
+                    flex: 2,
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '0.7rem',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+                  }}
+                >
+                  {quickExpenseSaving ? 'Guardando...' : '💰 Guardar Gasto 50/50'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div className="os-floating-toast">
+          {toastMessage}
         </div>
       )}
     </div>

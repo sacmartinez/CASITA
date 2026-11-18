@@ -374,3 +374,528 @@
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
+
+/* ==========================================================
+   SMART WIDGETS CAROUSEL & STACK (CasitaOS)
+   ========================================================== */
+.os-smart-widgets-wrapper {
+  width: 100%;
+  margin: 0.25rem 0 0.4rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.os-widget-header-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0 0.2rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.os-widget-header-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.os-widget-tab-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.os-widget-tab-pill.active {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.28), rgba(99, 102, 241, 0.2));
+  border-color: rgba(96, 165, 250, 0.45);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.25);
+}
+
+.os-widget-mini-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  display: inline-block;
+  box-shadow: 0 0 6px #f59e0b;
+}
+
+.os-smart-widget-card {
+  background: linear-gradient(135deg, rgba(20, 26, 46, 0.88) 0%, rgba(15, 23, 42, 0.94) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  animation: osWidgetFade 0.22s ease-out;
+}
+
+@keyframes osWidgetFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.os-widget-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+
+.os-widget-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.os-widget-badge-tag {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+}
+
+.os-widget-main-title {
+  font-size: 0.88rem;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.os-widget-link-btn {
+  background: transparent;
+  border: none;
+  color: #60a5fa;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.os-widget-link-btn:hover {
+  background: rgba(96, 165, 250, 0.12);
+}
+
+/* Jerbis 1-Tap Buttons */
+.os-widget-jerbis-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.os-widget-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.75rem;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.os-widget-action-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.os-widget-action-btn.pending {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(217, 119, 6, 0.05));
+}
+
+.os-widget-action-btn.completed {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(5, 150, 105, 0.05));
+}
+
+.os-btn-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.os-btn-emoji {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.os-btn-texts {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.os-btn-texts strong {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.os-btn-status {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.os-btn-check-icon {
+  font-size: 0.85rem;
+  font-weight: 900;
+  margin-left: 0.25rem;
+  color: #10b981;
+}
+
+.os-widget-action-btn.pending .os-btn-check-icon {
+  color: #f59e0b;
+}
+
+/* Meals Content */
+.os-widget-meals-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.os-meal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 0.45rem 0.75rem;
+}
+
+.os-meal-badge {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0.18rem 0.5rem;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.os-meal-badge.lunch {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.os-meal-badge.dinner {
+  background: rgba(139, 92, 246, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.os-meal-name {
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Balance 50/50 Content */
+.os-widget-balance-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.os-balance-owed-box, .os-balance-peace-box {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.os-owed-icon, .os-peace-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.os-owed-text {
+  display: block;
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+.os-owed-amount {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #f59e0b;
+}
+
+.os-peace-text {
+  display: block;
+  font-size: 0.84rem;
+  color: #10b981;
+}
+
+.os-peace-sub {
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+.os-quick-add-expense-pill {
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.os-quick-add-expense-pill:hover {
+  background: rgba(59, 130, 246, 0.3);
+  color: #ffffff;
+}
+
+/* ==========================================================
+   QUICK ACTIONS / 3D TOUCH MENU (CasitaOS)
+   ========================================================== */
+.os-quick-actions-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(10, 15, 30, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  animation: osFadeIn 0.18s ease;
+}
+
+.os-quick-actions-card {
+  background: #182035;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  width: 100%;
+  max-width: 360px;
+  overflow: hidden;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+  animation: osPopIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes osPopIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.os-quick-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.os-quick-header-app {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.os-quick-icon-preview {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.os-quick-close-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: #94a3b8;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.15s ease;
+}
+
+.os-quick-close-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.os-quick-actions-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  gap: 0.35rem;
+}
+
+.os-quick-action-item {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.os-quick-action-item:hover, .os-quick-action-item:active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateX(3px);
+}
+
+.os-quick-action-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.os-quick-action-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.os-quick-action-info strong {
+  font-size: 0.85rem;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.os-quick-action-info span {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin-top: 1px;
+}
+
+.os-quick-action-chevron {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+/* Floating Toast */
+.os-floating-toast {
+  position: fixed;
+  bottom: 5.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1300;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  color: #ffffff;
+  padding: 0.6rem 1.2rem;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(59, 130, 246, 0.35);
+  backdrop-filter: blur(12px);
+  white-space: nowrap;
+  animation: osToastIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes osToastIn {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Modales Rápidos (Añadir a la compra / Gasto) */
+.os-quick-input-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  background: rgba(10, 15, 30, 0.8);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  animation: osFadeIn 0.2s ease;
+}
+
+.os-quick-modal-box {
+  background: #182035;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  width: 100%;
+  max-width: 380px;
+  padding: 1.25rem;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+  animation: osPopIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.os-quick-pill-select {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0.2rem 0;
+}
+
+.os-quick-pill-select::-webkit-scrollbar {
+  display: none;
+}
+
+.os-quick-select-option {
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.os-quick-select-option.active {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}

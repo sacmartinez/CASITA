@@ -34,7 +34,11 @@ const defaultData = {
     Sandra: { targetDaysPerWeek: 3, targetWeightKg: null }
   },
   gymCustomRoutines: [],
-  gymCoopSession: null
+  gymCoopSession: null,
+  notificationSettings: {
+    Ismael: { weather: true, shopping: true, tasks: true, care: true, gym: true, birthdays: true },
+    Sandra: { weather: true, shopping: true, tasks: true, care: true, gym: true, birthdays: true }
+  }
 };
 
 // Leer base de datos
@@ -562,6 +566,35 @@ export const db = {
     if (data.subscriptions.length !== initialLength) {
       writeDB(data);
     }
+  },
+
+  // --- PREFERENCIAS DE NOTIFICACIONES PUSH POR APP ---
+  getNotificationSettings: (user) => {
+    const data = readDB();
+    const defaults = {
+      weather: true,
+      shopping: true,
+      tasks: true,
+      care: true,
+      gym: true,
+      birthdays: true
+    };
+    if (!data.notificationSettings) data.notificationSettings = {};
+    const targetUser = user || 'Ismael';
+    return { ...defaults, ...(data.notificationSettings[targetUser] || {}) };
+  },
+
+  updateNotificationSettings: (user, settings) => {
+    const data = readDB();
+    if (!data.notificationSettings) data.notificationSettings = {};
+    const targetUser = user || 'Ismael';
+    data.notificationSettings[targetUser] = {
+      ...(data.notificationSettings[targetUser] || {}),
+      ...settings,
+      updatedAt: new Date().toISOString()
+    };
+    writeDB(data);
+    return data.notificationSettings[targetUser];
   },
 
   // --- GASTOS COMPARTIDOS ---

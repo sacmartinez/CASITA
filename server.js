@@ -449,11 +449,170 @@ app.post(['/api/push/test-user', '/push/test-user'], async (req, res) => {
   }
 });
 
-// --- CRON JOB: RECORDATORIO DE CUIDADOS DIARIOS (06:00 AM) ---
+// Helper para formatear intervalos horarios legibles de lluvia
+function formatRainIntervals(hours) {
+  if (!hours || hours.length === 0) return '';
+  const intervals = [];
+  let start = hours[0];
+  let prev = hours[0];
+
+  for (let i = 1; i < hours.length; i++) {
+    if (hours[i] === prev + 1) {
+      prev = hours[i];
+    } else {
+      const startStr = `${String(start).padStart(2, '0')}:00`;
+      const endStr = `${String(prev + 1).padStart(2, '0')}:00`;
+      intervals.push(start === prev ? `a las ${startStr}` : `de ${startStr} a ${endStr}`);
+      start = hours[i];
+      prev = hours[i];
+    }
+  }
+  const startStr = `${String(start).padStart(2, '0')}:00`;
+  const endStr = `${String(prev + 1).padStart(2, '0')}:00`;
+  intervals.push(start === prev ? `a las ${startStr}` : `de ${startStr} a ${endStr}`);
+
+  return intervals.join(' y ');
+}
+
+// Comprobación de lluvia diaria a las 06:00 en Carabanchel, Alcobendas y Ventas
+async function checkAndSendWeatherRainAlert(targetUser = null, forceSend = false) {
+  const ZONES = [
+    { name: 'Carabanchel', lat: 40.3833, lon: -3.7333 },
+    { name: 'Alcobendas', lat: 40.5475, lon: -3.6420 },
+    { name: 'Ventas', lat: 40.4310, lon: -3.6600 }
+  ];
+
+  try {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const rainReports = [];
+
+    for (const zone of ZONES) {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${zone.lat}&longitude=${zone.lon}&hourly=precipitation_probability,precipitation,weather_code&daily=precipitation_probability_max,precipitation_sum&timezone=Europe%2FMadrid`;
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+
+        const dailyProb = data.daily?.precipitation_probability_max?.[0] || 0;
+        const dailySum = data.daily?.precipitation_sum?.[0] || 0;
+
+        const hourlyTimes = data.hourly?.time || [];
+        const hourlyProbs = data.hourly?.precipitation_probability || [];
+        const hourlyPrecip = data.hourly?.precipitation || [];
+        const hourlyCodes = data.hourly?.weather_code || [];
+
+        const rainyHours = [];
+        let maxZoneProb = dailyProb;
+
+        for (let i = 0; i < hourlyTimes.length; i++) {
+          const timeStr = hourlyTimes[i];
+          if (!timeStr.startsWith(todayStr)) continue;
+          const hour = parseInt(timeStr.substring(11, 13), 10);
+          if (hour < 6 || hour > 23) continue;
+
+          const p = hourlyProbs[i] || 0;
+          const mm = hourlyPrecip[i] || 0;
+          const code = hourlyCodes[i] || 0;
+          const isRainHour = p >= 40 || mm >= 0.2 || (code >= 51 && code <= 99);
+
+          if (isRainHour) {
+            rainyHours.push(hour);
+            if (p > maxZoneProb) maxZoneProb = p;
+          }
+        }
+
+        if (rainyHours.length > 0 || (dailyProb >= 45 && dailySum >= 0.4)) {
+          const hoursText = rainyHours.length > 0 ? formatRainIntervals(rainyHours) : 'durante la jornada';
+          rainReports.push({
+            name: zone.name,
+            prob: maxZoneProb,
+            hoursText
+          });
+        }
+      } catch (zoneErr) {
+        console.error(`Error consultando tiempo para ${zone.name}:`, zoneErr);
+      }
+    }
+
+    const recipients = targetUser ? [targetUser] : ['Ismael', 'Sandra'];
+
+    if (rainReports.length > 0) {
+      const title = '🌧️ Alerta Lluvia Hoy · Casita Hub';
+      const parts = rainReports.map(r => `${r.name}: ${r.hoursText} (${r.prob}%)`);
+      const body = `Lluvia prevista: ${parts.join('. ')}. ¡Acuérdate del paraguas antes de salir! ☔`;
+
+      for (const u of recipients) {
+        const uSettings = db.getNotificationSettings(u);
+        if (forceSend || uSettings.weather !== false) {
+          await sendPushNotification(u, title, body, '/?openWeather=true');
+        }
+      }
+      return { rain: true, reports: rainReports, sent: true, message: body };
+    } else {
+      if (forceSend && targetUser) {
+        const title = '☀️ Sin Lluvia Hoy · Casita Hub';
+        const body = 'Previsión despejada en Carabanchel, Alcobendas y Ventas. No se espera lluvia para hoy. ¡Que tengas un buen día!';
+        await sendPushNotification(targetUser, title, body, '/?openWeather=true');
+      }
+      return { rain: false, reports: [], sent: forceSend, message: 'No se prevé lluvia hoy en ninguna de las zonas.' };
+    }
+  } catch (err) {
+    console.error('Error en checkAndSendWeatherRainAlert:', err);
+    return { error: err.message };
+  }
+}
+
+// Endpoints de configuración de notificaciones por aplicación
+app.get('/api/notifications/settings', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const user = req.query.user || 'Ismael';
+    const settings = db.getNotificationSettings(user);
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ user, settings });
+  } catch (err) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500).json({ error: 'Error al obtener preferencias de notificaciones' });
+  }
+});
+
+app.post('/api/notifications/settings', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const { user, settings } = req.body;
+    const targetUser = user || 'Ismael';
+    const updated = db.updateNotificationSettings(targetUser, settings || {});
+    await flushPendingMongoWrites();
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: true, user: targetUser, settings: updated });
+  } catch (err) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500).json({ error: 'Error al actualizar preferencias de notificaciones' });
+  }
+});
+
+// Endpoint para probar alerta de lluvia en cualquier momento desde Ajustes
+app.post(['/api/push/test-weather', '/push/test-weather'], async (req, res) => {
+  try {
+    await ensureServerReady();
+    const { user, force } = req.body;
+    const targetUser = user || 'Ismael';
+    const result = await checkAndSendWeatherRainAlert(targetUser, force !== false);
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: true, result });
+  } catch (err) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500).json({ error: err.message || 'Error al ejecutar test de lluvia' });
+  }
+});
+
+// --- CRON JOB: RECORDATORIO DE CUIDADOS DIARIOS Y PREVISIÓN DE LLUVIA (06:00 AM) ---
 cron.schedule('0 6 * * *', async () => {
-  console.log('[Cron] Ejecutando verificación diaria de cuidados a las 06:00...');
+  console.log('[Cron] Ejecutando verificación diaria de cuidados y previsión de lluvia a las 06:00...');
   
   try {
+    // 0. Alerta matinal de lluvia en Carabanchel, Alcobendas y Ventas
+    await checkAndSendWeatherRainAlert();
     const logs = db.getCareLogs() || [];
     const now = new Date();
     const limitMs = 48 * 60 * 60 * 1000; // 48 horas (2 días)

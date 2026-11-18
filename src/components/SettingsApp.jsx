@@ -12,9 +12,80 @@ export default function SettingsApp({
   const [pushLoading, setPushLoading] = useState(false);
   const [testSent, setTestSent] = useState(false);
 
+  // Notificaciones por aplicación
+  const [appNotifications, setAppNotifications] = useState({
+    weather: true,
+    shopping: true,
+    tasks: true,
+    care: true,
+    gym: true,
+    birthdays: true
+  });
+  const [testingWeather, setTestingWeather] = useState(false);
+  const [weatherFeedback, setWeatherFeedback] = useState('');
+
+  // Cargar estado de notificaciones push del navegador
   useEffect(() => {
     checkPushStatus();
   }, [currentUser]);
+
+  // Cargar preferencias por aplicación desde el backend
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch(`/api/notifications/settings?user=${currentUser}`);
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          if (data && data.settings) {
+            setAppNotifications(prev => ({ ...prev, ...data.settings }));
+          }
+        }
+      } catch (err) {
+        console.warn('Error cargando preferencias de notificaciones:', err);
+      }
+    };
+    fetchSettings();
+    return () => { isMounted = false; };
+  }, [currentUser]);
+
+  const handleToggleAppNotification = async (key) => {
+    const updated = { ...appNotifications, [key]: !appNotifications[key] };
+    setAppNotifications(updated);
+    try {
+      await fetch('/api/notifications/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: currentUser, settings: { [key]: updated[key] } })
+      });
+    } catch (e) {
+      console.warn('Error guardando preferencia de notificación:', e);
+    }
+  };
+
+  const handleTestWeatherAlert = async () => {
+    setTestingWeather(true);
+    setWeatherFeedback('⏳ Comprobando previsión de hoy en Carabanchel, Alcobendas y Ventas...');
+    try {
+      const res = await fetch('/api/push/test-weather', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: currentUser, force: true })
+      });
+      const data = await res.json();
+      if (res.ok && data?.result?.message) {
+        setWeatherFeedback(`📨 ${data.result.message}`);
+      } else {
+        setWeatherFeedback('🚀 Aviso de lluvia enviado a tu dispositivo.');
+      }
+      setTimeout(() => setWeatherFeedback(''), 10000);
+    } catch (err) {
+      setWeatherFeedback('❌ Error al conectar con el servicio meteorológico.');
+      setTimeout(() => setWeatherFeedback(''), 5000);
+    } finally {
+      setTestingWeather(false);
+    }
+  };
 
   const checkPushStatus = async () => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -226,6 +297,178 @@ export default function SettingsApp({
               </button>
             </div>
           )}
+        </div>
+
+        {/* Sección: Notificaciones por Aplicación */}
+        <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid var(--glass-border)', borderRadius: '14px', padding: '1rem' }}>
+          <div style={{ marginBottom: '1rem' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
+              🎛️ Notificaciones por Aplicación
+            </span>
+            <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Activa o desactiva qué avisos deseas recibir en este dispositivo ({currentUser})
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            {/* App: El Tiempo (Lluvias 06:00 AM) */}
+            <div style={{
+              background: 'rgba(255,255,255,0.03)',
+              border: appNotifications.weather ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(255,255,255,0.06)',
+              borderRadius: '12px',
+              padding: '0.85rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem' }}>
+                  <span style={{ fontSize: '1.3rem', lineHeight: 1 }}>🌧️</span>
+                  <div>
+                    <strong style={{ fontSize: '0.88rem', color: '#fff', display: 'block' }}>
+                      El Tiempo (Aviso de Lluvia 06:00 AM)
+                    </strong>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', lineHeight: 1.35, display: 'block', marginTop: '0.15rem' }}>
+                      Avisa a las 06:00 si ese día se prevén lluvias en Carabanchel, Alcobendas o Ventas y en qué franjas horarias.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Slider / Switch */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={!!appNotifications.weather}
+                  onClick={() => handleToggleAppNotification('weather')}
+                  title={appNotifications.weather ? 'Desactivar avisos de lluvia' : 'Activar avisos de lluvia'}
+                  style={{
+                    width: '46px',
+                    height: '26px',
+                    borderRadius: '999px',
+                    background: appNotifications.weather ? '#10b981' : 'rgba(255,255,255,0.18)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    transition: 'background 0.25s ease',
+                    padding: '2px',
+                    flexShrink: 0
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'block',
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '50%',
+                      background: '#ffffff',
+                      boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+                      transform: appNotifications.weather ? 'translateX(20px)' : 'translateX(0)',
+                      transition: 'transform 0.25s ease'
+                    }}
+                  />
+                </button>
+              </div>
+
+              {/* Botón de prueba en vivo para El Tiempo */}
+              {appNotifications.weather && (
+                <div style={{ marginTop: '0.7rem', paddingTop: '0.6rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <button
+                    type="button"
+                    onClick={handleTestWeatherAlert}
+                    disabled={testingWeather}
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                      borderRadius: '8px',
+                      color: '#38bdf8',
+                      padding: '0.35rem 0.8rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    <span>{testingWeather ? '⏳ Consultando previsión...' : '🧪 Probar Alerta de Lluvia de las 06:00 Ahora'}</span>
+                  </button>
+                  {weatherFeedback && (
+                    <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#bae6fd', lineHeight: 1.35 }}>
+                      {weatherFeedback}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Otras Aplicaciones */}
+            {[
+              { key: 'shopping', icon: '🛒', name: 'Lista de la Compra', desc: 'Avisos cuando se añaden o tachan productos en el súper.' },
+              { key: 'tasks', icon: '📋', name: 'Tareas del Hogar', desc: 'Avisos cuando se completan o reasignan tareas.' },
+              { key: 'care', icon: '🐾', name: 'Cuidados Jerbis y Plantas', desc: 'Aviso matinal (06:00) si llevan >2 días sin cambio de agua o riego.' },
+              { key: 'gym', icon: '🏋️', name: 'Casita Gym (Entrenos)', desc: 'Avisos de entrenos finalizados y alertas de entrenamiento en pareja.' },
+              { key: 'birthdays', icon: '🎂', name: 'Cumpleaños y Eventos', desc: 'Avisos el mismo día y con 3 días de antelación.' }
+            ].map(app => {
+              const isChecked = appNotifications[app.key] !== false;
+              return (
+                <div
+                  key={app.key}
+                  style={{
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    borderRadius: '12px',
+                    padding: '0.75rem 0.85rem',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '0.75rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem' }}>
+                    <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>{app.icon}</span>
+                    <div>
+                      <strong style={{ fontSize: '0.85rem', color: '#fff', display: 'block' }}>
+                        {app.name}
+                      </strong>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.3, display: 'block', marginTop: '0.1rem' }}>
+                        {app.desc}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isChecked}
+                    onClick={() => handleToggleAppNotification(app.key)}
+                    title={isChecked ? `Desactivar ${app.name}` : `Activar ${app.name}`}
+                    style={{
+                      width: '46px',
+                      height: '26px',
+                      borderRadius: '999px',
+                      background: isChecked ? '#10b981' : 'rgba(255,255,255,0.18)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      position: 'relative',
+                      transition: 'background 0.25s ease',
+                      padding: '2px',
+                      flexShrink: 0
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'block',
+                        width: '22px',
+                        height: '22px',
+                        borderRadius: '50%',
+                        background: '#ffffff',
+                        boxShadow: '0 2px 5px rgba(0,0,0,0.3)',
+                        transform: isChecked ? 'translateX(20px)' : 'translateX(0)',
+                        transition: 'transform 0.25s ease'
+                      }}
+                    />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Sección: Modo de Visualización */}

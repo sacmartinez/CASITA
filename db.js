@@ -38,7 +38,8 @@ const defaultData = {
   notificationSettings: {
     Ismael: { weather: true, shopping: true, tasks: true, care: true, gym: true, birthdays: true },
     Sandra: { weather: true, shopping: true, tasks: true, care: true, gym: true, birthdays: true }
-  }
+  },
+  notificationHistory: []
 };
 
 // Leer base de datos
@@ -595,6 +596,61 @@ export const db = {
     };
     writeDB(data);
     return data.notificationSettings[targetUser];
+  },
+
+  // --- HISTORIAL DE NOTIFICACIONES PASADAS ---
+  getNotificationHistory: (user) => {
+    const data = readDB();
+    if (!data.notificationHistory) return [];
+    const targetUser = user || 'Ismael';
+    return data.notificationHistory
+      .filter(n => !n.user || n.user === targetUser || n.user === 'all')
+      .slice(0, 50);
+  },
+
+  addNotificationHistory: ({ user, title, body, url }) => {
+    const data = readDB();
+    if (!data.notificationHistory) data.notificationHistory = [];
+    const item = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+      user: user || 'all',
+      title,
+      body,
+      url: url || '/',
+      read: false,
+      timestamp: new Date().toISOString()
+    };
+    data.notificationHistory.unshift(item);
+    if (data.notificationHistory.length > 80) {
+      data.notificationHistory = data.notificationHistory.slice(0, 80);
+    }
+    writeDB(data);
+    return item;
+  },
+
+  markNotificationRead: (id, user) => {
+    const data = readDB();
+    if (!data.notificationHistory) return;
+    const targetUser = user || 'Ismael';
+    if (id === 'all') {
+      data.notificationHistory.forEach(n => {
+        if (!n.user || n.user === targetUser || n.user === 'all') {
+          n.read = true;
+        }
+      });
+    } else {
+      const item = data.notificationHistory.find(n => n.id === id);
+      if (item) item.read = true;
+    }
+    writeDB(data);
+  },
+
+  clearNotificationHistory: (user) => {
+    const data = readDB();
+    if (!data.notificationHistory) return;
+    const targetUser = user || 'Ismael';
+    data.notificationHistory = data.notificationHistory.filter(n => n.user && n.user !== targetUser && n.user !== 'all');
+    writeDB(data);
   },
 
   // --- GASTOS COMPARTIDOS ---

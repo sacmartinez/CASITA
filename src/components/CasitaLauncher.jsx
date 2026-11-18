@@ -1,6 +1,30 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import './CasitaLauncher.css';
 
+function formatTimeAgo(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffMins < 2) return 'Ahora';
+  if (diffMins < 60) return `Hace ${diffMins}m`;
+  if (diffHours < 24) return `Hace ${diffHours}h`;
+  return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+}
+
+function getNotifIcon(title = '') {
+  const t = title.toLowerCase();
+  if (t.includes('lluvia') || t.includes('tiempo')) return '🌧️';
+  if (t.includes('compra') || t.includes('súper')) return '🛒';
+  if (t.includes('tarea')) return '📋';
+  if (t.includes('kalu') || t.includes('lua') || t.includes('jerbo') || t.includes('agua') || t.includes('planta')) return '🐾';
+  if (t.includes('gym') || t.includes('entreno')) return '🏋️';
+  if (t.includes('cumple')) return '🎂';
+  return '🔔';
+}
+
 export default function CasitaLauncher({
   currentUser,
   onOpenApp,
@@ -13,10 +37,10 @@ export default function CasitaLauncher({
     return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   });
 
-  // Métricas para los Badges sobre los iconos
+  // Métricas para los Badges sobre los iconos (solo cuando haya algo pendiente)
   const [shoppingCount, setShoppingCount] = useState(0);
   const [tasksCount, setTasksCount] = useState(0);
-  const [careAlert, setCareAlert] = useState(false);
+  const [careAlertBadge, setCareAlertBadge] = useState(null);
   const [platesProgress, setPlatesProgress] = useState(0);
   const [weatherBadge, setWeatherBadge] = useState(() => {
     try {
@@ -27,6 +51,11 @@ export default function CasitaLauncher({
     }
   });
   const [quickWeather, setQuickWeather] = useState(null);
+
+  // Centro de Notificaciones Pasadas
+  const [notificationHistory, setNotificationHistory] = useState([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [showNotificationCenter, setShowNotificationCenter] = useState(false);
 
   // Reloj digital en vivo
   useEffect(() => {
@@ -128,9 +157,30 @@ export default function CasitaLauncher({
         if (careRes && careRes.ok) {
           const careData = await careRes.json();
           if (isMounted && Array.isArray(careData)) {
-            const lastWater = careData.find(c => c.action === 'agua' || c.action === 'water');
-            const hoursAgo = lastWater ? (Date.now() - new Date(lastWater.timestamp).getTime()) / 3600000 : 99;
-            setCareAlert(hoursAgo >= 24);
+            const isJerboTarget = (t) => {
+              if (!t) return false;
+              const s = t.toLowerCase();
+              return s.includes('jerbo') || s.includes('kalu') || s.includes('lua') || s.includes('rata') || s.includes('oreo');
+            };
+            const lastWater = careData.find(c => isJerboTarget(c.target) && (c.action?.toLowerCase() === 'agua' || c.action?.toLowerCase() === 'water'));
+            const lastFood = careData.find(c => isJerboTarget(c.target) && (c.action?.toLowerCase() === 'comida' || c.action?.toLowerCase() === 'food'));
+
+            const now = Date.now();
+            const hoursWater = lastWater ? (now - new Date(lastWater.timestamp).getTime()) / 3600000 : 999;
+            const hoursFood = lastFood ? (now - new Date(lastFood.timestamp).getTime()) / 3600000 : 999;
+
+            const waterPending = hoursWater >= 24;
+            const foodPending = hoursFood >= 24;
+
+            if (waterPending && foodPending) {
+              setCareAlertBadge('⚠️ Agua y Comida');
+            } else if (waterPending) {
+              setCareAlertBadge('⚠️ Agua');
+            } else if (foodPending) {
+              setCareAlertBadge('⚠️ Comida');
+            } else {
+              setCareAlertBadge(null); // ¡Sin burbuja si está atendido hoy!
+            }
           }
         }
 
@@ -140,6 +190,17 @@ export default function CasitaLauncher({
             setPlatesProgress(platesData.filter(p => p.completed).length);
           }
         }
+
+        // Cargar historial de notificaciones
+        try {
+          const notifRes = await fetch(`/api/notifications/history?user=${currentUser}`);
+          if (notifRes.ok && isMounted) {
+            const notifData = await notifRes.json();
+            const list = notifData.history || [];
+            setNotificationHistory(list);
+            setUnreadNotifCount(list.filter(n => !n.read).length);
+          }
+        } catch (_) {}
       } catch (err) {
         console.error('Error cargando badges del launcher:', err);
       }
@@ -147,9 +208,51 @@ export default function CasitaLauncher({
 
     fetchBadges();
     return () => { isMounted = false; };
-  }, []);
+  }, [currentUser]);
 
-  // Catálogo unificado y refinado de Apps CasitaOS
+  // Funciones de gestión del Centro de Notificaciones
+  const fetchNotificationHistory = async () => {
+    try {
+      const res = await fetch(`/api/notifications/history?user=${currentUser}`);
+      if (res.ok) {
+        const data = await res.json();
+        const list = data.history || [];
+        setNotificationHistory(list);
+        setUnreadNotifCount(list.filter(n => !n.read).length);
+      }
+    } catch (_) {}
+  };
+
+  const handleMarkAsRead = async (id = 'all') => {
+    try {
+      if (id === 'all') {
+        setNotificationHistory(prev => prev.map(n => ({ ...n, read: true })));
+        setUnreadNotifCount(0);
+      } else {
+        setNotificationHistory(prev => prev.map(n => n.id === id ? ({ ...n, read: true }) : n));
+        setUnreadNotifCount(prev => Math.max(0, prev - 1));
+      }
+      await fetch('/api/notifications/history/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, user: currentUser })
+      });
+    } catch (_) {}
+  };
+
+  const handleClearHistory = async () => {
+    try {
+      setNotificationHistory([]);
+      setUnreadNotifCount(0);
+      await fetch('/api/notifications/history/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: currentUser })
+      });
+    } catch (_) {}
+  };
+
+  // Catálogo unificado y refinado de Apps CasitaOS (Sin burbujas falsas)
   const allApps = useMemo(() => {
     const apps = [
       {
@@ -157,7 +260,7 @@ export default function CasitaLauncher({
         name: 'Mi Día',
         icon: '🧭',
         gradient: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-        badge: currentUser === 'Ismael' ? '06-22' : null,
+        badge: null,
         badgeType: 'normal',
         keywords: ['dia', 'rutina', 'cronometro', 'cv', 'somosgamberros', 'soundpulse', 'proyectos'],
         action: () => onOpenApp('organizer')
@@ -187,8 +290,8 @@ export default function CasitaLauncher({
         name: 'Finanzas',
         icon: '💰',
         gradient: 'linear-gradient(135deg, #10b981, #059669)',
-        badge: '50/50',
-        badgeType: 'success',
+        badge: null,
+        badgeType: 'normal',
         keywords: ['gastos', 'finanzas', 'dinero', 'tickets', 'cuentas', 'pagos'],
         action: () => onOpenApp('expenses')
       },
@@ -197,7 +300,7 @@ export default function CasitaLauncher({
         name: 'Comidas',
         icon: '🍽️',
         gradient: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
-        badge: 'Menú',
+        badge: null,
         badgeType: 'normal',
         keywords: ['comidas', 'cenas', 'menu', 'planning', 'recetas', 'recetario', 'cocina'],
         action: () => onOpenApp('planning', 'weekly')
@@ -217,8 +320,8 @@ export default function CasitaLauncher({
         name: 'Jerbis',
         icon: '🐹',
         gradient: 'linear-gradient(135deg, #db2777, #be185d)',
-        badge: careAlert ? '⚠️ Agua' : '💧 OK',
-        badgeType: careAlert ? 'warning' : 'success',
+        badge: careAlertBadge,
+        badgeType: 'warning',
         keywords: ['jerbis', 'mascotas', 'kalu', 'lua', 'oreo', 'agua', 'comida', 'diario'],
         action: () => onOpenApp('care', 'logs')
       },
@@ -227,8 +330,8 @@ export default function CasitaLauncher({
         name: 'Vehículos',
         icon: '🏍️',
         gradient: 'linear-gradient(135deg, #0284c7, #0369a1)',
-        badge: 'Ninja 650',
-        badgeType: 'success',
+        badge: null,
+        badgeType: 'normal',
         keywords: ['vehiculos', 'moto', 'coche', 'kawasaki', 'ninja', 'benelli', 'focus', 'fiesta', 'taller', 'itv'],
         action: () => onOpenApp('warranties')
       },
@@ -247,7 +350,7 @@ export default function CasitaLauncher({
         name: 'Matrículas',
         icon: '🚘',
         gradient: 'linear-gradient(135deg, #ca8a04, #a16207)',
-        badge: `${platesProgress}/10`,
+        badge: null,
         badgeType: 'normal',
         keywords: ['matriculas', 'juego', 'avistamiento', 'coche'],
         action: onOpenPlates
@@ -267,7 +370,7 @@ export default function CasitaLauncher({
         name: 'Calendario',
         icon: '📅',
         gradient: 'linear-gradient(135deg, #f43f5e, #e11d48)',
-        badge: 'Eventos',
+        badge: null,
         badgeType: 'normal',
         keywords: ['calendario', 'cumpleanos', 'eventos', 'fechas', 'aniversario'],
         action: () => onOpenApp('calendar')
@@ -277,7 +380,7 @@ export default function CasitaLauncher({
         name: 'El Tiempo',
         icon: '🌦️',
         gradient: 'linear-gradient(135deg, #0284c7, #0369a1)',
-        badge: weatherBadge || '7 días',
+        badge: weatherBadge,
         badgeType: weatherBadge ? 'warning' : 'normal',
         keywords: ['tiempo', 'clima', 'lluvia', 'temperatura', 'carabanchel', 'alcobendas', 'ventas', 'madrid', 'paraguas', 'prevision'],
         action: () => onOpenApp('weather')
@@ -339,12 +442,54 @@ export default function CasitaLauncher({
       {/* Reloj y Fecha (Pantalla de Inicio Móvil Real) */}
       <div className="os-top-clock-section">
         <div className="os-big-digital-time">{currentTime}</div>
-        <div className="os-date-and-greeting">
+        <div className="os-date-and-greeting" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <span>{dateFormatted}</span>
           <span className="os-greeting-pill">
             <span>{currentUser === 'Ismael' ? '👦' : '👧'}</span>
             <span>Hola, {currentUser}</span>
           </span>
+
+          {/* Botón Campana Centro de Notificaciones */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowNotificationCenter(true);
+              fetchNotificationHistory();
+            }}
+            style={{
+              background: unreadNotifCount > 0 ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+              border: unreadNotifCount > 0 ? '1.5px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '999px',
+              padding: '0.22rem 0.65rem',
+              color: '#ffffff',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.2s ease',
+              boxShadow: unreadNotifCount > 0 ? '0 0 12px rgba(59, 130, 246, 0.4)' : 'none'
+            }}
+            title="Ver Centro de Notificaciones pasadas"
+          >
+            <span>🔔</span>
+            {unreadNotifCount > 0 && (
+              <span style={{
+                background: '#ef4444',
+                color: '#fff',
+                fontSize: '0.62rem',
+                fontWeight: 900,
+                borderRadius: '999px',
+                padding: '0.05rem 0.35rem',
+                minWidth: '14px',
+                textAlign: 'center',
+                lineHeight: 1.2
+              }}>
+                {unreadNotifCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {quickWeather && (
@@ -373,6 +518,45 @@ export default function CasitaLauncher({
             ) : (
               <span style={{ color: '#94a3b8' }}>({quickWeather.prob}% lluvia)</span>
             )}
+          </button>
+        )}
+
+        {/* Barra de Notificación Reciente si hay pendientes */}
+        {unreadNotifCount > 0 && notificationHistory[0] && (
+          <button
+            type="button"
+            onClick={() => {
+              setShowNotificationCenter(true);
+              fetchNotificationHistory();
+            }}
+            style={{
+              marginTop: '0.45rem',
+              background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.45), rgba(88, 28, 135, 0.35))',
+              border: '1px solid rgba(147, 197, 253, 0.35)',
+              borderRadius: '12px',
+              padding: '0.4rem 0.85rem',
+              color: '#ffffff',
+              fontSize: '0.74rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.5rem',
+              cursor: 'pointer',
+              maxWidth: '380px',
+              width: '100%',
+              boxSizing: 'border-box',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+            }}
+            title="Abrir aviso en Centro de Notificaciones"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span>{getNotifIcon(notificationHistory[0].title)}</span>
+              <strong style={{ color: '#93c5fd' }}>{notificationHistory[0].title}:</strong>
+              <span style={{ color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notificationHistory[0].body}</span>
+            </div>
+            <span style={{ fontSize: '0.68rem', color: '#60a5fa', fontWeight: 800, flexShrink: 0 }}>
+              Ver ({unreadNotifCount})
+            </span>
           </button>
         )}
       </div>
@@ -446,6 +630,226 @@ export default function CasitaLauncher({
           </button>
         ))}
       </div>
+
+      {/* Modal / Cajón del Centro de Notificaciones Pasadas */}
+      {showNotificationCenter && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#1e293b',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            borderRadius: '20px',
+            maxWidth: '460px',
+            width: '100%',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            color: '#ffffff',
+            overflow: 'hidden'
+          }}>
+            {/* Cabecera */}
+            <div style={{
+              padding: '1rem 1.25rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ fontSize: '1.4rem' }}>📬</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc' }}>
+                    Centro de Notificaciones
+                  </h3>
+                  <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                    Historial de avisos de CasitaOS para {currentUser}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowNotificationCenter(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  color: '#94a3b8',
+                  fontSize: '1rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Barra de Acciones Rápidas */}
+            <div style={{
+              padding: '0.6rem 1.25rem',
+              background: 'rgba(255, 255, 255, 0.02)',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                {unreadNotifCount > 0 ? `${unreadNotifCount} pendientes de leer` : 'Todo al día'}
+              </span>
+
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                {unreadNotifCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleMarkAsRead('all')}
+                    style={{
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      border: '1px solid rgba(59, 130, 246, 0.4)',
+                      borderRadius: '8px',
+                      color: '#60a5fa',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '0.25rem 0.6rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ✓ Marcar todas leídas
+                  </button>
+                )}
+                {notificationHistory.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearHistory}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '8px',
+                      color: '#94a3b8',
+                      fontSize: '0.72rem',
+                      padding: '0.25rem 0.6rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🗑️ Limpiar
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Lista de Notificaciones */}
+            <div style={{
+              padding: '1rem 1.25rem',
+              overflowY: 'auto',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.65rem'
+            }}>
+              {notificationHistory.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: '#64748b' }}>
+                  <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.5rem' }}>✨</span>
+                  <strong style={{ display: 'block', color: '#94a3b8', fontSize: '0.9rem' }}>
+                    Sin notificaciones pendientes
+                  </strong>
+                  <span style={{ fontSize: '0.76rem', marginTop: '0.2rem', display: 'block' }}>
+                    Cuando Sandra o tú recibáis avisos de compras, lluvia o tareas, quedarán guardados aquí para revisarlos.
+                  </span>
+                </div>
+              ) : (
+                notificationHistory.map((n) => {
+                  const timeFormatted = formatTimeAgo(n.timestamp);
+                  return (
+                    <div
+                      key={n.id}
+                      style={{
+                        background: n.read ? 'rgba(255, 255, 255, 0.025)' : 'rgba(59, 130, 246, 0.12)',
+                        border: n.read ? '1px solid rgba(255, 255, 255, 0.06)' : '1px solid rgba(59, 130, 246, 0.35)',
+                        borderRadius: '14px',
+                        padding: '0.8rem',
+                        display: 'flex',
+                        gap: '0.75rem',
+                        alignItems: 'flex-start',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <span style={{ fontSize: '1.3rem', lineHeight: 1, marginTop: '2px' }}>
+                        {getNotifIcon(n.title)}
+                      </span>
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                          <strong style={{
+                            fontSize: '0.85rem',
+                            color: n.read ? '#cbd5e1' : '#ffffff',
+                            fontWeight: n.read ? 600 : 800,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {n.title}
+                          </strong>
+                          <span style={{ fontSize: '0.68rem', color: '#94a3b8', flexShrink: 0 }}>
+                            {timeFormatted}
+                          </span>
+                        </div>
+
+                        <p style={{
+                          margin: '0.25rem 0 0 0',
+                          fontSize: '0.76rem',
+                          color: n.read ? '#94a3b8' : '#e2e8f0',
+                          lineHeight: 1.35
+                        }}>
+                          {n.body}
+                        </p>
+                      </div>
+
+                      {!n.read && (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkAsRead(n.id)}
+                          title="Marcar como leída"
+                          style={{
+                            background: 'rgba(59, 130, 246, 0.2)',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '24px',
+                            height: '24px',
+                            color: '#60a5fa',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            marginTop: '2px'
+                          }}
+                        >
+                          ✓
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -90,6 +90,14 @@ const getOtherUser = (user) => user === 'Ismael' ? 'Sandra' : 'Ismael';
 
 // Helper para enviar notificación push
 async function sendPushNotification(targetUser, title, body, url) {
+  // Guardar en el historial de notificaciones pasadas del sistema
+  try {
+    db.addNotificationHistory({ user: targetUser, title, body, url });
+    await flushPendingMongoWrites();
+  } catch (histErr) {
+    console.warn('Error al registrar en historial push:', histErr);
+  }
+
   const subscriptions = db.getSubscriptionsForUser(targetUser);
   if (!subscriptions || subscriptions.length === 0) {
     console.warn(`[Push] No hay suscripciones activas registradas para ${targetUser}`);
@@ -657,6 +665,50 @@ app.post(['/api/push/test-weather', '/push/test-weather'], async (req, res) => {
   } catch (err) {
     res.setHeader('Content-Type', 'application/json');
     res.status(500).json({ error: err.message || 'Error al ejecutar test de lluvia' });
+  }
+});
+
+// Endpoints del Centro de Notificaciones (Historial de avisos pasados)
+app.get('/api/notifications/history', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const user = req.query.user || 'Ismael';
+    const history = db.getNotificationHistory(user);
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ user, history });
+  } catch (err) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500).json({ error: 'Error al consultar historial de notificaciones' });
+  }
+});
+
+app.post('/api/notifications/history/mark-read', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const { id, user } = req.body;
+    const targetUser = user || 'Ismael';
+    db.markNotificationRead(id || 'all', targetUser);
+    await flushPendingMongoWrites();
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: true });
+  } catch (err) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500).json({ error: 'Error al marcar notificación como leída' });
+  }
+});
+
+app.post('/api/notifications/history/clear', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const { user } = req.body;
+    const targetUser = user || 'Ismael';
+    db.clearNotificationHistory(targetUser);
+    await flushPendingMongoWrites();
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: true });
+  } catch (err) {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(500).json({ error: 'Error al vaciar historial de notificaciones' });
   }
 });
 

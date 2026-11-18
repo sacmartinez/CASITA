@@ -18,6 +18,23 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// --- RESTAURACIÓN DE RUTA PARA VERCEL SERVERLESS ---
+app.use((req, res, next) => {
+  if (req.query && req.query.__path) {
+    const rawPath = Array.isArray(req.query.__path) ? req.query.__path.join('/') : req.query.__path;
+    req.url = '/api/' + rawPath;
+  } else if (req.query && req.query.path) {
+    const rawPath = Array.isArray(req.query.path) ? req.query.path.join('/') : req.query.path;
+    req.url = '/api/' + rawPath;
+  } else if (req.url === '/api/index.js' || req.url === '/api/' || req.url === '/api' || req.url.startsWith('/api/index.js')) {
+    const matched = req.headers['x-matched-path'] || req.headers['x-vercel-matched-path'] || req.headers['x-rewrite-url'];
+    if (matched) {
+      req.url = matched;
+    }
+  }
+  next();
+});
+
 // --- CONFIGURACIÓN DE NOTIFICACIONES PUSH Y SINCRONIZACIÓN SERVERLESS (VERCEL / RENDER) ---
 let vapidKeys = null;
 let serverInitPromise = null;

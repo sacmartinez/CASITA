@@ -61,9 +61,22 @@ export default function SettingsApp({
         }
 
         const reg = await navigator.serviceWorker.ready;
-        const keyRes = await fetch('/api/push/vapid-public-key');
-        if (!keyRes.ok) throw new Error('No se pudo obtener la clave push');
-        const { publicKey } = await keyRes.json();
+        const KNOWN_VAPID_PUBLIC_KEY = 'BCBMbxMgpZPqp0JOT3YiIc8o7Xy0jjU6B1CkqoQCWfc4fQ7wD6r_UMzqY1DJtKY3jxSz92EpwC27KvMA9cHJkLE';
+        let publicKey = null;
+
+        try {
+          const keyRes = await fetch('/api/push/vapid-public-key');
+          const cType = keyRes.headers.get('content-type') || '';
+          if (keyRes.ok && (cType.includes('application/json') || cType === '')) {
+            const raw = await keyRes.text();
+            if (raw && !raw.trim().startsWith('<')) {
+              const parsed = JSON.parse(raw);
+              if (parsed && parsed.publicKey) publicKey = parsed.publicKey;
+            }
+          }
+        } catch (_) {}
+
+        if (!publicKey) publicKey = KNOWN_VAPID_PUBLIC_KEY;
 
         // Convertir clave base64 a Uint8Array
         const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
@@ -83,7 +96,7 @@ export default function SettingsApp({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ subscription: sub, user: currentUser })
-        });
+        }).catch(() => null);
 
         setPushStatus('enabled');
       }

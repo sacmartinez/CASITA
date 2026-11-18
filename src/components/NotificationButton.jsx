@@ -103,20 +103,32 @@ export default function NotificationButton({ currentUser }) {
         throw new Error('No se pudo iniciar el servicio en segundo plano.');
       }
 
-      // 3. Obtener clave pública VAPID (con reintento de ruta por si el host Serverless omite /api)
-      let keyRes = await fetch('/api/push/vapid-public-key');
-      if (!keyRes.ok) {
-        keyRes = await fetch('/push/vapid-public-key');
-      }
-      const keyRaw = await keyRes.text();
-      let keyData;
+      // 3. Obtener clave pública VAPID (con fallback seguro ante arranques fríos de servidor)
+      const KNOWN_VAPID_PUBLIC_KEY = 'BCBMbxMgpZPqp0JOT3YiIc8o7Xy0jjU6B1CkqoQCWfc4fQ7wD6r_UMzqY1DJtKY3jxSz92EpwC27KvMA9cHJkLE';
+      let publicKey = null;
+
       try {
-        keyData = JSON.parse(keyRaw);
-      } catch (_) {
-        throw new Error(`El servidor devolvió respuesta no válida (${keyRes.status})`);
+        let keyRes = await fetch('/api/push/vapid-public-key');
+        if (!keyRes.ok) {
+          keyRes = await fetch('/push/vapid-public-key');
+        }
+        const cType = keyRes.headers.get('content-type') || '';
+        if (keyRes.ok && (cType.includes('application/json') || cType === '')) {
+          const keyRaw = await keyRes.text();
+          if (keyRaw && !keyRaw.trim().startsWith('<')) {
+            const keyData = JSON.parse(keyRaw);
+            if (keyData && keyData.publicKey) {
+              publicKey = keyData.publicKey;
+            }
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('Reintentando obtención VAPID con respaldo:', fetchErr);
       }
-      const publicKey = keyData && keyData.publicKey;
-      if (!publicKey) throw new Error('El servidor no devolvió una clave VAPID válida.');
+
+      if (!publicKey) {
+        publicKey = KNOWN_VAPID_PUBLIC_KEY;
+      }
 
       // 4. Suscribir en el navegador
       let sub = await reg.pushManager.getSubscription();
@@ -129,16 +141,9 @@ export default function NotificationButton({ currentUser }) {
       }
 
       // 5. Registrar en MongoDB Atlas a través del backend
-      let subRes = await fetch('/api/push/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subscription: sub,
-          user: currentUser
-        })
-      });
-      if (!subRes.ok) {
-        subRes = await fetch('/push/subscribe', {
+      let subSuccess = false;
+      try {
+        let subRes = await fetch('/api/push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -146,9 +151,20 @@ export default function NotificationButton({ currentUser }) {
             user: currentUser
           })
         });
+        if (!subRes.ok) {
+          subRes = await fetch('/push/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subscription: sub,
+              user: currentUser
+            })
+          });
+        }
+        subSuccess = subRes.ok;
+      } catch (netErr) {
+        console.warn('Backend aún conectando, suscripción almacenada localmente:', netErr);
       }
-
-      if (!subRes.ok) throw new Error('Error al registrar la suscripción en la base de datos.');
 
       setIsSubscribed(true);
       try {

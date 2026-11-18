@@ -376,40 +376,62 @@ app.put('/api/planning/:dayId/complete-activity', async (req, res) => {
 });
 
 // 5. SUSCRIPCIÓN DE NOTIFICACIONES PUSH (soporta tanto /api/push como /push en Vercel)
-app.get(['/api/push/vapid-public-key', '/push/vapid-public-key'], (req, res) => {
-  if (!vapidKeys) vapidKeys = db.getVapidKeys();
-  res.json({ publicKey: vapidKeys ? vapidKeys.publicKey : null });
+app.get(['/api/push/vapid-public-key', '/push/vapid-public-key'], async (req, res) => {
+  try {
+    await ensureServerReady();
+    if (!vapidKeys) vapidKeys = db.getVapidKeys();
+    if (!vapidKeys) {
+      vapidKeys = webpush.generateVAPIDKeys();
+      db.saveVapidKeys(vapidKeys);
+      await flushPendingMongoWrites();
+    }
+    res.setHeader('Content-Type', 'application/json');
+    return res.json({ publicKey: vapidKeys ? vapidKeys.publicKey : null });
+  } catch (err) {
+    console.error('Error al devolver clave VAPID:', err);
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(500).json({ error: 'Error al obtener clave VAPID' });
+  }
 });
 
-app.post(['/api/push/subscribe', '/push/subscribe'], (req, res) => {
+app.post(['/api/push/subscribe', '/push/subscribe'], async (req, res) => {
   try {
+    await ensureServerReady();
     const { subscription, user } = req.body;
     if (!subscription || !user) {
       return res.status(400).json({ error: 'Faltan campos obligatorios (subscription, user)' });
     }
     db.saveSubscription(user, subscription);
+    await flushPendingMongoWrites();
+    res.setHeader('Content-Type', 'application/json');
     res.status(201).json({ success: true });
   } catch (error) {
+    console.error('Error al registrar suscripción push:', error);
+    res.setHeader('Content-Type', 'application/json');
     res.status(500).json({ error: 'Error al registrar suscripción push' });
   }
 });
 
-app.get(['/api/push/status', '/push/status'], (req, res) => {
+app.get(['/api/push/status', '/push/status'], async (req, res) => {
   try {
+    await ensureServerReady();
     const user = req.query.user || 'Ismael';
     const subs = db.getSubscriptionsForUser(user);
+    res.setHeader('Content-Type', 'application/json');
     res.json({
       user,
       hasSubscription: subs.length > 0,
       count: subs.length
     });
   } catch (error) {
+    res.setHeader('Content-Type', 'application/json');
     res.status(500).json({ error: 'Error al consultar estado de push' });
   }
 });
 
 app.post(['/api/push/test-user', '/push/test-user'], async (req, res) => {
   try {
+    await ensureServerReady();
     const { user } = req.body;
     const targetUser = user || 'Ismael';
     await sendPushNotification(
@@ -418,8 +440,11 @@ app.post(['/api/push/test-user', '/push/test-user'], async (req, res) => {
       `¡Funciona perfecto 24/7 en Vercel! Dispositivo conectado para ${targetUser} 🏠✨`,
       '/'
     );
+    res.setHeader('Content-Type', 'application/json');
     res.json({ success: true, message: `Notificación de prueba enviada con éxito a ${targetUser}` });
   } catch (error) {
+    console.error('Error al enviar prueba push:', error);
+    res.setHeader('Content-Type', 'application/json');
     res.status(500).json({ error: 'Error al enviar notificación de prueba' });
   }
 });

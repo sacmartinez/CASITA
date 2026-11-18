@@ -37,28 +37,69 @@ export default function CasitaLauncher({
     return () => clearInterval(timer);
   }, []);
 
-  // Carga del tiempo para alerta de lluvia en launcher
+  // Carga del tiempo para alerta de lluvia en launcher en base a ubicación GPS real
   useEffect(() => {
     let isMounted = true;
-    const fetchLauncherWeather = async () => {
+
+    const getDistanceKm = (lat1, lon1, lat2, lon2) => {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    };
+
+    const resolveLocationLabel = (lat, lon) => {
+      if (getDistanceKm(lat, lon, 40.3833, -3.7333) < 4.0) return 'Carabanchel';
+      if (getDistanceKm(lat, lon, 40.5475, -3.6420) < 4.0) return 'Alcobendas';
+      if (getDistanceKm(lat, lon, 40.4316, -3.6635) < 4.0) return 'Ventas';
+      return 'Tu ubicación';
+    };
+
+    const fetchWeatherForCoords = async (lat, lon, label) => {
       try {
-        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=40.3833&longitude=-3.7333&current=temperature_2m,weather_code&daily=precipitation_probability_max,precipitation_sum&timezone=Europe%2FMadrid');
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&daily=precipitation_probability_max,precipitation_sum&timezone=Europe%2FMadrid`;
+        const res = await fetch(url);
         if (res.ok && isMounted) {
           const data = await res.json();
           const prob = data.daily?.precipitation_probability_max?.[0] || 0;
           const temp = Math.round(data.current?.temperature_2m || 15);
           const isRain = prob >= 40;
-          setQuickWeather({ temp, prob, isRain });
+          setQuickWeather({ temp, prob, isRain, label });
           if (isRain) {
             setWeatherBadge(`🌧️ ${prob}%`);
           } else {
             setWeatherBadge(null);
           }
-          localStorage.setItem('casita_weather_today_rain_prob', prob);
+          try {
+            localStorage.setItem('casita_weather_today_rain_prob', prob);
+            localStorage.setItem('casita_last_weather_label', label);
+          } catch (_) {}
         }
       } catch (_) {}
     };
-    fetchLauncherWeather();
+
+    // Intentar geolocalización del navegador
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          const label = resolveLocationLabel(lat, lon);
+          fetchWeatherForCoords(lat, lon, label);
+        },
+        () => {
+          // Fallback en caso de permiso denegado o timeout
+          fetchWeatherForCoords(40.3833, -3.7333, 'Carabanchel');
+        },
+        { timeout: 6000, maximumAge: 300000 }
+      );
+    } else {
+      fetchWeatherForCoords(40.3833, -3.7333, 'Carabanchel');
+    }
+
     return () => { isMounted = false; };
   }, []);
 
@@ -326,7 +367,7 @@ export default function CasitaLauncher({
             }}
             title="Abrir El Tiempo (Previsión 7 días)"
           >
-            <span>📍 Carabanchel · {quickWeather.temp}°C {quickWeather.isRain ? '🌧️' : '⛅'}</span>
+            <span>📍 {quickWeather.label || 'Ubicación'} · {quickWeather.temp}°C {quickWeather.isRain ? '🌧️' : '⛅'}</span>
             {quickWeather.isRain ? (
               <span style={{ color: '#38bdf8', fontWeight: 800 }}>({quickWeather.prob}% lluvia hoy)</span>
             ) : (

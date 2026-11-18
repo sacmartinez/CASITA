@@ -3,6 +3,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
+    "api/**/*.js": {
+      "maxDuration": 30,
+      "includeFiles": "db.json"
+    },
     "api/*.js": {
       "maxDuration": 30,
       "includeFiles": "db.json"
@@ -10,7 +14,15 @@
   },
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|manifest\\.json|sw\\.js|icon-|apple-touch-|favicon).*)" ,
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/push/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/((?!api/|push/|assets/|manifest\\.json|sw\\.js|icon-|apple-touch-|favicon).*)",
       "destination": "/index.html"
     }
   ]

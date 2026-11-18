@@ -1,13 +1,33 @@
 import app from '../server.js';
 
 export default function handler(req, res) {
-  if (req.query && req.query.path) {
-    const rawPath = Array.isArray(req.query.path) ? req.query.path.join('/') : req.query.path;
-    req.url = '/api/' + rawPath;
-  } else if (req.headers['x-matched-path']) {
-    req.url = req.headers['x-matched-path'];
-  } else if (req.url && !req.url.startsWith('/api') && !req.url.startsWith('/push')) {
-    req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+  try {
+    const rawUrl = req.url || '';
+    const qIndex = rawUrl.indexOf('?');
+    const queryString = qIndex !== -1 ? rawUrl.substring(qIndex + 1) : '';
+    const params = new URLSearchParams(queryString);
+
+    let resolvedSubpath = params.get('__path') || params.get('path');
+    if (!resolvedSubpath && req.query) {
+      resolvedSubpath = req.query.__path || req.query.path;
+      if (Array.isArray(resolvedSubpath)) resolvedSubpath = resolvedSubpath.join('/');
+    }
+
+    if (resolvedSubpath) {
+      params.delete('__path');
+      params.delete('path');
+      const remainingQuery = params.toString();
+      const cleanSub = resolvedSubpath.startsWith('/') ? resolvedSubpath.slice(1) : resolvedSubpath;
+      const prefix = cleanSub.startsWith('api/') ? '/' : '/api/';
+      req.url = `${prefix}${cleanSub}${remainingQuery ? '?' + remainingQuery : ''}`;
+    } else {
+      const matched = req.headers['x-matched-path'] || req.headers['x-vercel-matched-path'] || req.headers['x-rewrite-url'] || req.headers['x-invoke-path'];
+      if (matched && matched !== '/api/index.js' && matched !== '/api') {
+        req.url = matched;
+      }
+    }
+  } catch (err) {
+    console.error('Error restaurando req.url en api/[...path].js:', err);
   }
   return app(req, res);
 }

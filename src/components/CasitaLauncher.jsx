@@ -3,18 +3,24 @@ import './CasitaLauncher.css';
 
 function formatTimeAgo(isoString) {
   if (!isoString) return '';
-  const d = new Date(isoString);
-  const now = new Date();
-  const diffMs = now - d;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffMins < 2) return 'Ahora';
-  if (diffMins < 60) return `Hace ${diffMins}m`;
-  if (diffHours < 24) return `Hace ${diffHours}h`;
-  return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '';
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffMins < 2) return 'Ahora';
+    if (diffMins < 60) return `Hace ${diffMins}m`;
+    if (diffHours < 24) return `Hace ${diffHours}h`;
+    return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  } catch (_) {
+    return '';
+  }
 }
 
 function getNotifIcon(title = '') {
+  if (!title || typeof title !== 'string') return '🔔';
   const t = title.toLowerCase();
   if (t.includes('lluvia') || t.includes('tiempo')) return '🌧️';
   if (t.includes('compra') || t.includes('súper')) return '🛒';
@@ -398,7 +404,7 @@ export default function CasitaLauncher({
     ];
 
     return apps;
-  }, [currentUser, shoppingCount, tasksCount, careAlert, platesProgress, weatherBadge, onOpenApp, onOpenSettings, onOpenPlates]);
+  }, [currentUser, shoppingCount, tasksCount, careAlertBadge, platesProgress, weatherBadge, onOpenApp, onOpenSettings, onOpenPlates]);
 
   // Filtrado reactivo en la barra de búsqueda
   const filteredApps = useMemo(() => {
@@ -522,7 +528,7 @@ export default function CasitaLauncher({
         )}
 
         {/* Barra de Notificación Reciente si hay pendientes */}
-        {unreadNotifCount > 0 && notificationHistory[0] && (
+        {unreadNotifCount > 0 && notificationHistory && notificationHistory.length > 0 && notificationHistory[0] && (
           <button
             type="button"
             onClick={() => {
@@ -550,9 +556,9 @@ export default function CasitaLauncher({
             title="Abrir aviso en Centro de Notificaciones"
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              <span>{getNotifIcon(notificationHistory[0].title)}</span>
-              <strong style={{ color: '#93c5fd' }}>{notificationHistory[0].title}:</strong>
-              <span style={{ color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notificationHistory[0].body}</span>
+              <span>{getNotifIcon(notificationHistory[0]?.title)}</span>
+              <strong style={{ color: '#93c5fd' }}>{notificationHistory[0]?.title || 'Aviso'}:</strong>
+              <span style={{ color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis' }}>{notificationHistory[0]?.body || ''}</span>
             </div>
             <span style={{ fontSize: '0.68rem', color: '#60a5fa', fontWeight: 800, flexShrink: 0 }}>
               Ver ({unreadNotifCount})
@@ -760,7 +766,7 @@ export default function CasitaLauncher({
               flexDirection: 'column',
               gap: '0.65rem'
             }}>
-              {notificationHistory.length === 0 ? (
+              {(!notificationHistory || notificationHistory.length === 0) ? (
                 <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: '#64748b' }}>
                   <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.5rem' }}>✨</span>
                   <strong style={{ display: 'block', color: '#94a3b8', fontSize: '0.9rem' }}>
@@ -772,7 +778,10 @@ export default function CasitaLauncher({
                 </div>
               ) : (
                 notificationHistory.map((n) => {
+                  if (!n || !n.id) return null;
                   const timeFormatted = formatTimeAgo(n.timestamp);
+                  const safeTitle = n.title || 'Aviso';
+                  const safeBody = n.body || '';
                   return (
                     <div
                       key={n.id}
@@ -788,7 +797,7 @@ export default function CasitaLauncher({
                       }}
                     >
                       <span style={{ fontSize: '1.3rem', lineHeight: 1, marginTop: '2px' }}>
-                        {getNotifIcon(n.title)}
+                        {getNotifIcon(safeTitle)}
                       </span>
 
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -801,7 +810,7 @@ export default function CasitaLauncher({
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
                           }}>
-                            {n.title}
+                            {safeTitle}
                           </strong>
                           <span style={{ fontSize: '0.68rem', color: '#94a3b8', flexShrink: 0 }}>
                             {timeFormatted}
@@ -814,7 +823,7 @@ export default function CasitaLauncher({
                           color: n.read ? '#94a3b8' : '#e2e8f0',
                           lineHeight: 1.35
                         }}>
-                          {n.body}
+                          {safeBody}
                         </p>
                       </div>
 

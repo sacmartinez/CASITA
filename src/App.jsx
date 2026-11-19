@@ -23,6 +23,7 @@ import SharedNotesApp from './components/SharedNotesApp';
 import CalendarEventsApp from './components/CalendarEventsApp';
 import SettingsApp from './components/SettingsApp';
 import WeatherApp from './components/WeatherApp';
+import WalletApp from './components/WalletApp';
 
 const APP_NAMES = {
   organizer: '🧭 Mi Día',
@@ -36,6 +37,7 @@ const APP_NAMES = {
   notes: '📝 Notas Compartidas',
   calendar: '📅 Calendario y Eventos',
   weather: '🌦️ El Tiempo',
+  wallet: '🎟️ Cartera & Entradas',
   settings: '⚙️ Ajustes del Sistema'
 };
 
@@ -345,6 +347,16 @@ function App() {
         </div>
       )}
 
+      {/* App: Cartera & Entradas (Conciertos, Cine, Tarjetas de Fidelización) */}
+      {activeTab === 'wallet' && (
+        <div style={{ maxWidth: '750px', margin: '0 auto', width: '100%' }}>
+          <WalletApp
+            currentUser={currentUser}
+            onOpenCalendar={() => setActiveTab('calendar')}
+          />
+        </div>
+      )}
+
       {/* Vista Clásica del Dashboard (Home) */}
       {!isBetaLauncher && activeTab === 'home' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem', padding: '0 1rem 1.5rem 1rem', maxWidth: '900px', margin: '0 auto', width: '100%' }}>
@@ -420,7 +432,7 @@ function App() {
       )}
 
       {/* Grid de herramientas principales (Shopping, Expenses, Tasks, Jerbis) */}
-      {activeTab !== 'home' && activeTab !== 'launcher' && activeTab !== 'planning' && activeTab !== 'gym' && activeTab !== 'warranties' && activeTab !== 'organizer' && activeTab !== 'notes' && activeTab !== 'calendar' && activeTab !== 'settings' && activeTab !== 'weather' && (
+      {activeTab !== 'home' && activeTab !== 'launcher' && activeTab !== 'planning' && activeTab !== 'gym' && activeTab !== 'warranties' && activeTab !== 'organizer' && activeTab !== 'notes' && activeTab !== 'calendar' && activeTab !== 'settings' && activeTab !== 'weather' && activeTab !== 'wallet' && (
         <main className={`dashboard-grid ${isMobile ? 'mobile-tab-view' : ''}`}>
           {/* LISTA DE COMPRAS */}
           {showSection('shopping') && (

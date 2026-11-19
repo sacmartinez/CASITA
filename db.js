@@ -36,10 +36,12 @@ const defaultData = {
   gymCustomRoutines: [],
   gymCoopSession: null,
   notificationSettings: {
-    Ismael: { weather: true, shopping: true, tasks: true, care: true, gym: true, birthdays: true },
-    Sandra: { weather: true, shopping: true, tasks: true, care: true, gym: true, birthdays: true }
+    Ismael: { weather: true, shopping: true, tasks: true, care: true, gym: true, birthdays: true, wallet: true },
+    Sandra: { weather: true, shopping: true, tasks: true, care: true, gym: true, birthdays: true, wallet: true }
   },
-  notificationHistory: []
+  notificationHistory: [],
+  walletTickets: [],
+  walletCards: []
 };
 
 // Leer base de datos
@@ -99,6 +101,14 @@ function readDB() {
     }
     if (data.gymCoopSession === undefined) {
       data.gymCoopSession = null;
+      changed = true;
+    }
+    if (!data.walletTickets) {
+      data.walletTickets = [];
+      changed = true;
+    }
+    if (!data.walletCards) {
+      data.walletCards = [];
       changed = true;
     }
     if (changed) {
@@ -651,6 +661,107 @@ export const db = {
     const targetUser = user || 'Ismael';
     data.notificationHistory = data.notificationHistory.filter(n => n.user && n.user !== targetUser && n.user !== 'all');
     writeDB(data);
+  },
+
+  // --- CARTERA & ENTRADAS (WALLET, TICKETS & CARDS) ---
+  getWalletTickets: () => {
+    const data = readDB();
+    if (!data.walletTickets) data.walletTickets = [];
+    return data.walletTickets;
+  },
+
+  addWalletTicket: ({ eventName, date, time, venue, seats, forUser, file, barcode, notes, addedBy }) => {
+    const data = readDB();
+    if (!data.walletTickets) data.walletTickets = [];
+    const newTicket = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+      eventName: (eventName || 'Evento').trim(),
+      date, // YYYY-MM-DD
+      time: time || '',
+      venue: venue ? venue.trim() : '',
+      seats: seats ? seats.trim() : '',
+      forUser: forUser || 'Ambos', // 'Ismael' | 'Sandra' | 'Ambos'
+      file: file || null,
+      barcode: barcode ? barcode.trim() : '',
+      notes: notes ? notes.trim() : '',
+      addedBy: addedBy || 'Ismael',
+      createdAt: new Date().toISOString()
+    };
+    data.walletTickets.unshift(newTicket);
+
+    // Sincronizar automáticamente con el Planificador Semanal si cae en el rango visible
+    try {
+      if (Array.isArray(data.planning)) {
+        const matchingDay = data.planning.find(p => p.date === date);
+        if (matchingDay) {
+          const actPrefix = `🎟️ ${eventName}`;
+          if (!matchingDay.actividad || matchingDay.actividad === '') {
+            matchingDay.actividad = `${actPrefix}${venue ? ` (${venue})` : ''}`;
+          } else if (!matchingDay.actividad.includes(eventName)) {
+            matchingDay.actividad += ` | ${actPrefix}`;
+          }
+          matchingDay.updatedBy = addedBy || 'Wallet';
+          matchingDay.updatedAt = new Date().toISOString();
+        }
+      }
+    } catch (e) {
+      console.warn('Error sincronizando ticket con planning:', e);
+    }
+
+    writeDB(data);
+    return newTicket;
+  },
+
+  deleteWalletTicket: (id) => {
+    const data = readDB();
+    if (!data.walletTickets) return false;
+    const initialLength = data.walletTickets.length;
+    data.walletTickets = data.walletTickets.filter(t => t.id !== id);
+    if (data.walletTickets.length !== initialLength) {
+      writeDB(data);
+      return true;
+    }
+    return false;
+  },
+
+  getWalletCards: () => {
+    const data = readDB();
+    if (!data.walletCards) data.walletCards = [];
+    return data.walletCards;
+  },
+
+  addWalletCard: ({ name, category, cardType, photo, number, barcodeType, colorGradient, notes, owner, addedBy }) => {
+    const data = readDB();
+    if (!data.walletCards) data.walletCards = [];
+    const newCard = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+      name: (name || 'Tarjeta').trim(),
+      category: category || 'Fidelidad',
+      cardType: cardType || (photo ? 'photo' : 'digital'),
+      photo: photo || null,
+      number: number ? number.trim() : '',
+      barcodeType: barcodeType || 'CODE128',
+      colorGradient: colorGradient || 'linear-gradient(135deg, #4f46e5, #3b82f6)',
+      notes: notes ? notes.trim() : '',
+      owner: owner || 'Ambos',
+      addedBy: addedBy || 'Ismael',
+      createdAt: new Date().toISOString()
+    };
+    data.walletCards.unshift(newCard);
+    writeDB(data);
+    return newCard;
+  },
+
+  deleteWalletCard: (id) => {
+    const data = readDB();
+    if (!data.walletCards) return false;
+    const initialLength = data.walletCards.length;
+    data.walletCards = data.walletCards.filter(c => c.id !== id);
+    if (data.walletCards.length !== initialLength) {
+      writeDB(data);
+      return true;
+    }
+    return false;
   },
 
   // --- GASTOS COMPARTIDOS ---

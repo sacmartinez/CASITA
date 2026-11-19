@@ -726,6 +726,99 @@ app.post('/api/notifications/history/clear', async (req, res) => {
   }
 });
 
+// --- ENDPOINTS DE CARTERA & ENTRADAS (WALLET, TICKETS & CARDS) ---
+app.get('/api/wallet/tickets', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const tickets = db.getWalletTickets();
+    res.setHeader('Content-Type', 'application/json');
+    res.json(tickets);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al consultar entradas' });
+  }
+});
+
+app.post('/api/wallet/tickets', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const { eventName, date, time, venue, seats, forUser, file, barcode, notes, addedBy } = req.body;
+    if (!eventName || !date) {
+      return res.status(400).json({ error: 'El nombre del evento y la fecha son obligatorios' });
+    }
+    const ticket = db.addWalletTicket({ eventName, date, time, venue, seats, forUser, file, barcode, notes, addedBy });
+    await flushPendingMongoWrites();
+
+    // Enviar notificación push informativa a la pareja
+    const notifyOther = (addedBy === 'Ismael' ? 'Sandra' : 'Ismael');
+    if (forUser === 'Ambos' || forUser === notifyOther) {
+      await sendPushNotification(
+        notifyOther,
+        `🎟️ Entrada guardada: ${eventName}`,
+        `${addedBy || 'Tu pareja'} ha añadido entradas para el ${date}${venue ? ` en ${venue}` : ''}. ¡Recordatorios activados!`,
+        '/wallet'
+      );
+    }
+
+    res.setHeader('Content-Type', 'application/json');
+    res.status(201).json(ticket);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al añadir entrada' });
+  }
+});
+
+app.delete('/api/wallet/tickets/:id', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const { id } = req.params;
+    const deleted = db.deleteWalletTicket(id);
+    await flushPendingMongoWrites();
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: deleted });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al eliminar entrada' });
+  }
+});
+
+app.get('/api/wallet/cards', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const cards = db.getWalletCards();
+    res.setHeader('Content-Type', 'application/json');
+    res.json(cards);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al consultar tarjetas' });
+  }
+});
+
+app.post('/api/wallet/cards', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const { name, category, cardType, photo, number, barcodeType, colorGradient, notes, owner, addedBy } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'El nombre de la tarjeta es obligatorio' });
+    }
+    const card = db.addWalletCard({ name, category, cardType, photo, number, barcodeType, colorGradient, notes, owner, addedBy });
+    await flushPendingMongoWrites();
+    res.setHeader('Content-Type', 'application/json');
+    res.status(201).json(card);
+  } catch (err) {
+    res.status(500).json({ error: 'Error al añadir tarjeta' });
+  }
+});
+
+app.delete('/api/wallet/cards/:id', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const { id } = req.params;
+    const deleted = db.deleteWalletCard(id);
+    await flushPendingMongoWrites();
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: deleted });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al eliminar tarjeta' });
+  }
+});
+
 // --- CRON JOB: RECORDATORIO DE CUIDADOS DIARIOS Y PREVISIÓN DE LLUVIA (06:00 AM) ---
 cron.schedule('0 6 * * *', async () => {
   console.log('[Cron] Ejecutando verificación diaria de cuidados y previsión de lluvia a las 06:00...');
@@ -817,6 +910,40 @@ cron.schedule('0 6 * * *', async () => {
       }
     } catch (bdayErr) {
       console.error('Error al procesar alertas de cumpleaños en cron:', bdayErr);
+    }
+
+    // 5. Verificar Entradas de Conciertos y Eventos en Casita Wallet (1 día antes y el día del evento)
+    try {
+      const tickets = db.getWalletTickets() || [];
+      const getMadridDateStr = (daysOffset = 0) => {
+        const d = new Date();
+        if (daysOffset !== 0) d.setDate(d.getDate() + daysOffset);
+        return d.toLocaleDateString('en-CA', { timeZone: 'Europe/Madrid' });
+      };
+
+      const todayStr = getMadridDateStr(0);
+      const tomorrowStr = getMadridDateStr(1);
+
+      for (const t of tickets) {
+        if (!t.date) continue;
+        const targetUsers = t.forUser === 'Ambos' ? ['Ismael', 'Sandra'] : [t.forUser];
+
+        if (t.date === todayStr) {
+          const pushTitle = `🎉 ¡Hoy es el evento: ${t.eventName}!`;
+          const pushBody = `Tu evento es hoy${t.time ? ` a las ${t.time}` : ''}${t.venue ? ` en ${t.venue}` : ''}. ¡Abre Casita Wallet para tener tus entradas y códigos listos! 🎟️`;
+          for (const u of targetUsers) {
+            await sendPushNotification(u, pushTitle, pushBody, '/wallet');
+          }
+        } else if (t.date === tomorrowStr) {
+          const pushTitle = `🎟️ Mañana: ${t.eventName}`;
+          const pushBody = `Recuerda que mañana tienes evento${t.time ? ` a las ${t.time}` : ''}${t.venue ? ` en ${t.venue}` : ''}. Revisa tus entradas en Casita Wallet. ✨`;
+          for (const u of targetUsers) {
+            await sendPushNotification(u, pushTitle, pushBody, '/wallet');
+          }
+        }
+      }
+    } catch (ticketErr) {
+      console.error('Error al procesar alertas de tickets en cron:', ticketErr);
     }
 
   } catch (error) {

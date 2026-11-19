@@ -1,0 +1,577 @@
+/* Casita Wallet - Cartera de Entradas y Tarjetas de Fidelización (Estilo Swoo / Google Wallet) */
+.wallet-root {
+  min-height: calc(100vh - 80px);
+  padding: 0.75rem 0.75rem 6.5rem 0.75rem;
+  max-width: 650px;
+  margin: 0 auto;
+  width: 100%;
+  color: #ffffff;
+  position: relative;
+  user-select: none;
+  animation: walletFadeIn 0.2s ease-out;
+}
+
+@keyframes walletFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Header */
+.wallet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.9rem;
+  padding: 0.4rem 0.2rem;
+}
+
+.wallet-title-area {
+  display: flex;
+  flex-direction: column;
+}
+
+.wallet-title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: #ffffff;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.wallet-subtitle {
+  font-size: 0.76rem;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.wallet-add-btn {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  padding: 0.5rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+  transition: all 0.15s ease;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wallet-add-btn:active {
+  transform: scale(0.95);
+}
+
+/* Search bar */
+.wallet-search-wrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 0.9rem;
+}
+
+.wallet-search-input {
+  width: 100%;
+  background: rgba(22, 27, 46, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 0.65rem 1rem 0.65rem 2.5rem;
+  color: #ffffff;
+  font-size: 0.88rem;
+  outline: none;
+  box-sizing: border-box;
+  backdrop-filter: blur(12px);
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.wallet-search-input:focus {
+  border-color: #6366f1;
+  background: rgba(26, 32, 54, 0.95);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
+.wallet-search-icon {
+  position: absolute;
+  left: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+  font-size: 0.95rem;
+  pointer-events: none;
+}
+
+/* Filter Chips (Swoo Style) */
+.wallet-filter-scroll {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0.2rem 0.1rem 0.85rem 0.1rem;
+}
+
+.wallet-filter-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.wallet-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wallet-chip.active {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.25);
+}
+
+/* ==========================================================
+   TAB 1: ENTRADAS DE EVENTOS Y CONCIERTOS
+   ========================================================== */
+.wallet-tickets-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.wallet-ticket-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(16px);
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.wallet-ticket-card:active {
+  transform: scale(0.98);
+}
+
+/* Perforation punch-holes on borders */
+.wallet-ticket-card::before,
+.wallet-ticket-card::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #0f172a;
+  box-shadow: inset 0 0 4px rgba(0,0,0,0.4);
+  transform: translateY(-50%);
+}
+
+.wallet-ticket-card::before {
+  left: -9px;
+}
+
+.wallet-ticket-card::after {
+  right: -9px;
+}
+
+.wallet-date-block {
+  width: 58px;
+  min-width: 58px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 0.45rem 0.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.wallet-date-month {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
+}
+
+.wallet-date-day {
+  font-size: 1.45rem;
+  font-weight: 900;
+  color: #ffffff;
+  line-height: 1.1;
+}
+
+.wallet-date-year {
+  font-size: 0.6rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.wallet-ticket-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.wallet-ticket-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.wallet-ticket-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.25;
+}
+
+.wallet-countdown-pill {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  letter-spacing: 0.2px;
+}
+
+.wallet-countdown-pill.today {
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #f87171;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+.wallet-countdown-pill.tomorrow {
+  background: rgba(245, 158, 11, 0.25);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #fbbf24;
+}
+
+.wallet-countdown-pill.soon {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+}
+
+.wallet-countdown-pill.past {
+  background: rgba(255, 255, 255, 0.05);
+  color: #64748b;
+}
+
+.wallet-ticket-meta {
+  font-size: 0.76rem;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.wallet-ticket-seats {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.wallet-ticket-qr-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  background: rgba(99, 102, 241, 0.18);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 12px;
+  padding: 0.45rem 0.65rem;
+  color: #a5b4fc;
+  font-size: 0.68rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.wallet-ticket-card:hover .wallet-ticket-qr-btn {
+  background: rgba(99, 102, 241, 0.3);
+  color: #ffffff;
+}
+
+/* ==========================================================
+   TAB 2: TARJETAS DE FIDELIZACIÓN (SWOO STYLE 2-COLUMNS)
+   ========================================================== */
+.wallet-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.wallet-loyalty-card {
+  position: relative;
+  aspect-ratio: 1.58 / 1;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.75rem;
+  box-sizing: border-box;
+}
+
+.wallet-loyalty-card:active {
+  transform: scale(0.95);
+}
+
+/* Subtle Card Gloss reflection */
+.wallet-loyalty-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 45%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 100%);
+  pointer-events: none;
+}
+
+/* Photo Card Variant */
+.wallet-card-photo-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 14px;
+}
+
+.wallet-card-photo-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.45rem 0.6rem;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0) 100%);
+  color: #ffffff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 2;
+}
+
+/* Digital Card Variant */
+.wallet-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  z-index: 2;
+}
+
+.wallet-card-brand-name {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallet-card-chip-icon {
+  font-size: 1.1rem;
+  opacity: 0.85;
+}
+
+.wallet-card-bottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  z-index: 2;
+}
+
+.wallet-card-number-preview {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 1px;
+}
+
+.wallet-card-owner-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.12rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* ==========================================================
+   FLOATING BOTTOM BAR (FLOAT BAR NATIVO)
+   ========================================================== */
+.wallet-float-bar {
+  position: fixed;
+  bottom: 1.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  background: rgba(20, 24, 40, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  padding: 0.35rem 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.55), 0 0 20px rgba(99, 102, 241, 0.2);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.wallet-float-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.15rem;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wallet-float-btn.active {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+}
+
+.wallet-float-badge {
+  background: rgba(255, 255, 255, 0.2);
+  font-size: 0.68rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  color: #ffffff;
+}
+
+/* ==========================================================
+   SCANNER & FULLSCREEN MODALS
+   ========================================================== */
+.wallet-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  background: rgba(10, 15, 30, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: walletFadeIn 0.2s ease;
+}
+
+.wallet-modal-card {
+  background: #182035;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65);
+  padding: 1.35rem;
+  box-sizing: border-box;
+}
+
+.wallet-scanner-box {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  color: #0f172a;
+  margin: 1rem 0;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+.wallet-barcode-visual {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0.5rem 0;
+  overflow: hidden;
+}
+
+.wallet-code-text {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #0f172a;
+  margin-top: 0.5rem;
+}
+
+/* Empty State */
+.wallet-empty-state {
+  text-align: center;
+  padding: 3.5rem 1.5rem;
+  color: #64748b;
+}
+
+.wallet-empty-emoji {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.wallet-empty-title {
+  font-size: 1.05rem;
+  color: #94a3b8;
+  font-weight: 700;
+  margin: 0 0 0.35rem 0;
+}
+
+.wallet-empty-desc {
+  font-size: 0.78rem;
+  color: #64748b;
+  line-height: 1.45;
+  margin: 0;
+}

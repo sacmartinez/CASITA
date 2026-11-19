@@ -645,6 +645,27 @@ export default function CasitaLauncher({
             }
           }
         ];
+      case 'wallet':
+        return [
+          {
+            icon: '🎟️',
+            title: 'Ver Entradas',
+            desc: 'Conciertos, cine y festivales',
+            action: () => {
+              setQuickActionMenu(null);
+              onOpenApp('wallet');
+            }
+          },
+          {
+            icon: '💳',
+            title: 'Ver Tarjetas',
+            desc: 'Fidelidad y documentos',
+            action: () => {
+              setQuickActionMenu(null);
+              onOpenApp('wallet');
+            }
+          }
+        ];
       case 'matriculas':
         return [
           {
@@ -804,6 +825,16 @@ export default function CasitaLauncher({
         badgeType: weatherBadge ? 'warning' : 'normal',
         keywords: ['tiempo', 'clima', 'lluvia', 'temperatura', 'carabanchel', 'alcobendas', 'ventas', 'madrid', 'paraguas', 'prevision'],
         action: () => onOpenApp('weather')
+      },
+      {
+        id: 'wallet',
+        name: 'Cartera',
+        icon: '🎟️',
+        gradient: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+        badge: null,
+        badgeType: 'normal',
+        keywords: ['cartera', 'wallet', 'entradas', 'conciertos', 'cine', 'festivales', 'tarjetas', 'fidelidad', 'club', 'swoo', 'tickets', 'acceso'],
+        action: () => onOpenApp('wallet')
       },
       {
         id: 'ajustes',

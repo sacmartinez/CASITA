@@ -1,7 +1,59 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './WalletApp.css';
 
-// Compresión de imágenes del lado del cliente (~100KB)
+// Detección de PDF
+export const isPdf = (fileData) => {
+  if (!fileData) return false;
+  return typeof fileData === 'string' && (
+    fileData.startsWith('data:application/pdf') ||
+    fileData.startsWith('%PDF-') ||
+    fileData.includes('application/pdf')
+  );
+};
+
+// Conversión segura de DataURI base64 a Blob URL (vital para que los navegadores y móviles abran e incrusten PDFs)
+export const getBlobUrlFromDataUri = (dataUri) => {
+  if (!dataUri) return '';
+  if (dataUri.startsWith('blob:') || dataUri.startsWith('http')) return dataUri;
+  try {
+    const parts = dataUri.split(',');
+    if (parts.length < 2) return dataUri;
+    const mimeMatch = parts[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : (isPdf(dataUri) ? 'application/pdf' : 'image/jpeg');
+    const byteCharacters = atob(parts[1]);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch (err) {
+    console.error('Error creating blob URL:', err);
+    return dataUri;
+  }
+};
+
+// Abrir en pestaña nueva o en el visor nativo de PDFs del móvil
+export const handleOpenInNewTab = (fileData) => {
+  if (!fileData) return;
+  const blobUrl = getBlobUrlFromDataUri(fileData);
+  window.open(blobUrl, '_blank');
+};
+
+// Descarga directa
+export const handleDownloadFile = (fileData, defaultName = 'entrada') => {
+  if (!fileData) return;
+  const blobUrl = getBlobUrlFromDataUri(fileData);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = isPdf(fileData) ? `${defaultName}.pdf` : `${defaultName}.jpg`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+// Compresión de imágenes del lado del cliente con resolución óptima para OCR y lectura (1400px, 0.8)
 const compressImage = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -11,7 +63,7 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const max_width = 1000;
+        const max_width = 1400;
         let width = img.width;
         let height = img.height;
 
@@ -24,7 +76,7 @@ const compressImage = (file) => {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.65));
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
       };
       img.onerror = (err) => reject(err);
     };
@@ -86,9 +138,15 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
   const [showAddTicketModal, setShowAddTicketModal] = useState(false);
   const [showAddCardModal, setShowAddCardModal] = useState(false);
   const [selectedTicketPass, setSelectedTicketPass] = useState(null);
+  const [ticketModalTab, setTicketModalTab] = useState('pass'); // 'pass' | 'document'
+  const [viewDocumentModal, setViewDocumentModal] = useState(null); // { file, eventName, type }
   const [selectedCardScanner, setSelectedCardScanner] = useState(null);
   const [viewPhotoFull, setViewPhotoFull] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
+
+  // Estados de IA para analizar entradas
+  const [analyzingAI, setAnalyzingAI] = useState(false);
+  const [aiSuccessMessage, setAiSuccessMessage] = useState('');
 
   // Formulario Entrada
   const [ticketForm, setTicketForm] = useState({
@@ -164,24 +222,70 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
     return Math.round((target - now) / 86400000);
   };
 
-  // Manejador de subida de archivo para Entrada
+  // Analizar entrada con IA (Gemini) a partir del PDF o imagen
+  const analyzeTicketWithAI = async (fileData) => {
+    if (!fileData) return;
+    setAnalyzingAI(true);
+    setAiSuccessMessage('');
+    try {
+      const res = await fetch('/api/wallet/scan-ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileData })
+      });
+
+      const json = await res.json();
+      if (res.ok && json.data) {
+        const d = json.data;
+        setTicketForm(prev => ({
+          ...prev,
+          eventName: d.eventName || prev.eventName,
+          date: d.date || prev.date,
+          time: d.time || prev.time,
+          venue: d.venue || prev.venue,
+          seats: d.seats || prev.seats,
+          barcode: d.barcode || prev.barcode,
+          forUser: (d.forUser === 'Ismael' || d.forUser === 'Sandra') ? d.forUser : prev.forUser,
+          notes: d.notes ? (prev.notes ? `${prev.notes} · ${d.notes}` : d.notes) : prev.notes
+        }));
+        setAiSuccessMessage('✨ ¡Entrada analizada con IA! Hemos completado el evento, fecha, recinto y asientos.');
+        if (navigator.vibrate) navigator.vibrate([40, 50, 40]);
+        showToast('✨ Entrada analizada con éxito');
+      } else if (json.error === 'NEEDS_API_KEY') {
+        showToast('ℹ️ Configura tu clave de Gemini en Ajustes para análisis IA');
+      } else {
+        showToast('⚠️ No se reconocieron todos los campos automáticamente. Revísalos.');
+      }
+    } catch (err) {
+      console.error('Error al analizar entrada con IA:', err);
+      showToast('⚠️ No se pudo conectar con el analizador de entradas');
+    } finally {
+      setAnalyzingAI(false);
+    }
+  };
+
+  // Manejador de subida de archivo para Entrada (PDF o Imagen)
   const handleTicketFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setTicketFileLoading(true);
+    setAiSuccessMessage('');
     try {
+      let fileData = null;
       if (file.type.startsWith('image/')) {
-        const compressed = await compressImage(file);
-        setTicketForm(prev => ({ ...prev, file: compressed }));
+        fileData = await compressImage(file);
       } else {
         // Para PDFs u otros documentos, leer como data URL
-        const reader = new FileReader();
-        reader.onload = () => {
-          setTicketForm(prev => ({ ...prev, file: reader.result }));
-        };
-        reader.readAsDataURL(file);
+        fileData = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
       }
-      showToast('📎 Archivo de entrada adjuntado');
+      setTicketForm(prev => ({ ...prev, file: fileData }));
+      showToast('📎 Entrada adjuntada. Analizando datos con IA...');
+      await analyzeTicketWithAI(fileData);
     } catch (_) {
       showToast('❌ Error al procesar el archivo');
     } finally {
@@ -517,10 +621,34 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
                     )}
                   </div>
 
-                  {/* Botón QR / Ver pase */}
-                  <div className="wallet-ticket-qr-btn">
-                    <span style={{ fontSize: '1.25rem' }}>📱</span>
-                    <span>Pase</span>
+                  {/* Botones de Acción en la tarjeta: Pase y PDF / Foto */}
+                  <div className="wallet-ticket-actions-col" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="wallet-ticket-action-pill pass"
+                      onClick={() => {
+                        setTicketModalTab('pass');
+                        setSelectedTicketPass(t);
+                      }}
+                      title="Abrir Pase Digital"
+                    >
+                      <span style={{ fontSize: '1.05rem' }}>📱</span>
+                      <span>Pase</span>
+                    </button>
+                    {t.file && (
+                      <button
+                        type="button"
+                        className="wallet-ticket-action-pill doc"
+                        onClick={() => {
+                          setTicketModalTab('document');
+                          setSelectedTicketPass(t);
+                        }}
+                        title={isPdf(t.file) ? 'Ver Entrada PDF' : 'Ver Foto'}
+                      >
+                        <span style={{ fontSize: '1.05rem' }}>{isPdf(t.file) ? '📄' : '🖼️'}</span>
+                        <span>{isPdf(t.file) ? 'PDF' : 'Foto'}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -610,14 +738,14 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
       </div>
 
       {/* ==========================================================
-          MODAL PASE DE ENTRADA / CONTROL DE ACCESO
+          MODAL PASE DE ENTRADA / CONTROL DE ACCESO & VISOR PDF
           ========================================================== */}
       {selectedTicketPass && (
         <div className="wallet-modal-overlay" onClick={() => setSelectedTicketPass(null)}>
-          <div className="wallet-modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="wallet-modal-card" style={{ maxWidth: ticketModalTab === 'document' ? '560px' : '440px' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
               <span style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#38bdf8', fontWeight: 800 }}>
-                Control de Acceso
+                {ticketModalTab === 'pass' ? 'Control de Acceso' : 'Documento Original'}
               </span>
               <button
                 type="button"
@@ -628,65 +756,167 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
               </button>
             </div>
 
-            <h2 style={{ margin: '0 0 0.35rem 0', fontSize: '1.3rem', color: '#ffffff' }}>
+            <h2 style={{ margin: '0 0 0.35rem 0', fontSize: '1.25rem', color: '#ffffff' }}>
               {selectedTicketPass.eventName}
             </h2>
 
-            <div style={{ display: 'flex', gap: '0.5rem', color: '#94a3b8', fontSize: '0.8rem', marginBottom: '0.8rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', color: '#94a3b8', fontSize: '0.78rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
               <span>📅 {selectedTicketPass.date}</span>
               {selectedTicketPass.time && <span>⏰ {selectedTicketPass.time}</span>}
               {selectedTicketPass.venue && <span>📍 {selectedTicketPass.venue}</span>}
             </div>
 
-            {selectedTicketPass.seats && (
-              <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', padding: '0.6rem 0.8rem', borderRadius: '12px', fontSize: '0.82rem', marginBottom: '1rem' }}>
-                <strong style={{ color: '#38bdf8', display: 'block', fontSize: '0.72rem', textTransform: 'uppercase' }}>Ubicación / Asientos:</strong>
-                <span style={{ color: '#ffffff', fontWeight: 600 }}>{selectedTicketPass.seats}</span>
-              </div>
-            )}
-
-            {/* Código de barras / QR de Alta Claridad para el Escáner */}
-            <div className="wallet-scanner-box">
-              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Muestra este código en el torno
-              </span>
-              <div className="wallet-barcode-visual">
-                <VisualBarcode value={selectedTicketPass.barcode || selectedTicketPass.id} height={85} />
-              </div>
-              <div className="wallet-code-text">
-                {selectedTicketPass.barcode || selectedTicketPass.id.slice(-8).toUpperCase()}
-              </div>
-            </div>
-
-            {/* Botón Ver archivo o foto adjunta si existe */}
-            {selectedTicketPass.file && (
+            {/* Selector de Pestaña: Pase Digital vs Entrada Original (PDF / Foto) */}
+            <div className="wallet-modal-segmented">
               <button
                 type="button"
-                onClick={() => setViewPhotoFull(selectedTicketPass.file)}
-                style={{
-                  width: '100%',
-                  background: 'rgba(59, 130, 246, 0.18)',
-                  border: '1px solid rgba(59, 130, 246, 0.35)',
-                  borderRadius: '12px',
-                  padding: '0.75rem',
-                  color: '#93c5fd',
-                  fontWeight: 700,
-                  fontSize: '0.86rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem',
-                  marginBottom: '0.8rem'
-                }}
+                className={`wallet-seg-btn ${ticketModalTab === 'pass' ? 'active' : ''}`}
+                onClick={() => setTicketModalTab('pass')}
               >
-                <span>📎</span>
-                <span>Ver Entrada / PDF / Foto Adjunta</span>
+                <span>📱</span>
+                <span>Pase Digital &amp; Torno</span>
               </button>
+              <button
+                type="button"
+                className={`wallet-seg-btn ${ticketModalTab === 'document' ? 'active' : ''}`}
+                onClick={() => setTicketModalTab('document')}
+              >
+                <span>{selectedTicketPass.file && isPdf(selectedTicketPass.file) ? '📄' : '🖼️'}</span>
+                <span>{selectedTicketPass.file && isPdf(selectedTicketPass.file) ? 'Entrada PDF' : 'Entrada Original'}</span>
+              </button>
+            </div>
+
+            {/* PESTAÑA 1: PASE DIGITAL */}
+            {ticketModalTab === 'pass' && (
+              <>
+                {selectedTicketPass.seats && (
+                  <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', padding: '0.6rem 0.8rem', borderRadius: '12px', fontSize: '0.82rem', marginBottom: '1rem' }}>
+                    <strong style={{ color: '#38bdf8', display: 'block', fontSize: '0.72rem', textTransform: 'uppercase' }}>Ubicación / Asientos:</strong>
+                    <span style={{ color: '#ffffff', fontWeight: 600 }}>{selectedTicketPass.seats}</span>
+                  </div>
+                )}
+
+                {/* Código de barras / QR de Alta Claridad para el Escáner */}
+                <div className="wallet-scanner-box">
+                  <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Muestra este código en el torno
+                  </span>
+                  <div className="wallet-barcode-visual">
+                    <VisualBarcode value={selectedTicketPass.barcode || selectedTicketPass.id} height={85} />
+                  </div>
+                  <div className="wallet-code-text">
+                    {selectedTicketPass.barcode || selectedTicketPass.id.slice(-8).toUpperCase()}
+                  </div>
+                </div>
+
+                {/* Acceso rápido a ver entrada PDF si existe */}
+                {selectedTicketPass.file && (
+                  <button
+                    type="button"
+                    onClick={() => setTicketModalTab('document')}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(59, 130, 246, 0.18)',
+                      border: '1px solid rgba(59, 130, 246, 0.35)',
+                      borderRadius: '12px',
+                      padding: '0.65rem',
+                      color: '#93c5fd',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.45rem',
+                      marginBottom: '0.8rem'
+                    }}
+                  >
+                    <span>{isPdf(selectedTicketPass.file) ? '📄' : '🖼️'}</span>
+                    <span>Ver {isPdf(selectedTicketPass.file) ? 'Entrada PDF Original' : 'Foto de la Entrada'}</span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* PESTAÑA 2: VISOR DE ENTRADA PDF / FOTO */}
+            {ticketModalTab === 'document' && (
+              <div className="wallet-doc-viewer-box">
+                {selectedTicketPass.file ? (
+                  <>
+                    <div className="wallet-doc-toolbar">
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="wallet-toolbar-btn primary"
+                          onClick={() => handleOpenInNewTab(selectedTicketPass.file)}
+                          title="Abrir en pestaña nueva o en visor móvil"
+                        >
+                          <span>↗️</span>
+                          <span>Abrir en Navegador / Móvil</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="wallet-toolbar-btn"
+                          onClick={() => handleDownloadFile(selectedTicketPass.file, selectedTicketPass.eventName)}
+                          title="Descargar archivo"
+                        >
+                          <span>⬇️</span>
+                          <span>Descargar</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="wallet-toolbar-btn"
+                          onClick={() => setViewDocumentModal({
+                            file: selectedTicketPass.file,
+                            eventName: selectedTicketPass.eventName,
+                            type: isPdf(selectedTicketPass.file) ? 'pdf' : 'image'
+                          })}
+                          title="Pantalla Completa"
+                        >
+                          <span>🔍</span>
+                          <span>Pantalla Completa</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {isPdf(selectedTicketPass.file) ? (
+                      <div>
+                        <iframe
+                          src={getBlobUrlFromDataUri(selectedTicketPass.file)}
+                          title="Entrada PDF"
+                          className="wallet-pdf-iframe"
+                        />
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', marginTop: '0.35rem', textAlign: 'center' }}>
+                          💡 Si tu móvil no muestra el PDF incrustado, pulsa "↗️ Abrir en Navegador / Móvil" para zoom fluido.
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{ cursor: 'pointer' }} onClick={() => setViewDocumentModal({ file: selectedTicketPass.file, eventName: selectedTicketPass.eventName, type: 'image' })}>
+                        <img
+                          src={selectedTicketPass.file}
+                          alt="Entrada Original"
+                          className="wallet-ticket-full-img"
+                        />
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', marginTop: '0.35rem', textAlign: 'center' }}>
+                          🔍 Toca la imagen para ver a pantalla completa
+                        </span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '2rem 1rem', color: '#94a3b8' }}>
+                    <span style={{ fontSize: '2rem', display: 'block', marginBottom: '0.5rem' }}>📄❌</span>
+                    <strong style={{ fontSize: '0.9rem', color: '#cbd5e1', display: 'block' }}>Sin archivo adjunto</strong>
+                    <p style={{ fontSize: '0.78rem', margin: '0.3rem 0 0 0', color: '#64748b' }}>
+                      No se adjuntó archivo PDF ni foto al crear esta entrada.
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Acciones inferiores */}
-            <div style={{ display: 'flex', gap: '0.6rem', marginTop: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.8rem' }}>
               <button
                 type="button"
                 onClick={() => handleDeleteTicket(selectedTicketPass.id)}
@@ -719,7 +949,7 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
                   cursor: 'pointer'
                 }}
               >
-                Cerrar Pase
+                Cerrar
               </button>
             </div>
           </div>
@@ -864,39 +1094,72 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
       )}
 
       {/* ==========================================================
-          MODAL VER FOTO / ENTRADA COMPLETA
+          MODAL VISOR DE ENTRADA / DOCUMENTO COMPLETO (PDF O FOTO)
           ========================================================== */}
-      {viewPhotoFull && (
-        <div className="wallet-modal-overlay" onClick={() => setViewPhotoFull(null)}>
-          <div style={{ maxWidth: '95vw', maxHeight: '92vh', position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-            <img
-              src={viewPhotoFull}
-              alt="Visualización completa"
-              style={{ width: '100%', maxHeight: '85vh', objectFit: 'contain', borderRadius: '16px', display: 'block' }}
-            />
-            <button
-              type="button"
-              onClick={() => setViewPhotoFull(null)}
-              style={{
-                position: 'absolute',
-                top: '-15px',
-                right: '-15px',
-                background: '#ef4444',
-                color: '#fff',
-                border: 'none',
-                width: '34px',
-                height: '34px',
-                borderRadius: '50%',
-                fontWeight: 900,
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.4)'
-              }}
-            >
-              ✕
-            </button>
+      {(viewDocumentModal || viewPhotoFull) && (() => {
+        const docFile = viewDocumentModal?.file || viewPhotoFull;
+        const docTitle = viewDocumentModal?.eventName || 'Documento';
+        const isFilePdf = isPdf(docFile);
+
+        return (
+          <div className="wallet-modal-overlay" onClick={() => { setViewDocumentModal(null); setViewPhotoFull(null); }}>
+            <div className="wallet-doc-fullscreen-card" onClick={(e) => e.stopPropagation()}>
+              <div className="wallet-doc-fullscreen-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', overflow: 'hidden' }}>
+                  <span style={{ fontSize: '1.2rem' }}>{isFilePdf ? '📄' : '🖼️'}</span>
+                  <strong style={{ fontSize: '0.92rem', color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {docTitle}
+                  </strong>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="wallet-toolbar-btn primary"
+                    onClick={() => handleOpenInNewTab(docFile)}
+                    title="Abrir en pestaña nueva o visor nativo del móvil"
+                  >
+                    <span>↗️</span>
+                    <span>Navegador</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="wallet-toolbar-btn"
+                    onClick={() => handleDownloadFile(docFile, docTitle)}
+                    title="Descargar archivo"
+                  >
+                    <span>⬇️</span>
+                    <span>Guardar</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="os-quick-close-btn"
+                    onClick={() => { setViewDocumentModal(null); setViewPhotoFull(null); }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              <div className="wallet-doc-fullscreen-body">
+                {isFilePdf ? (
+                  <iframe
+                    src={getBlobUrlFromDataUri(docFile)}
+                    title="Visor Entrada PDF Completa"
+                    className="wallet-fullscreen-iframe"
+                  />
+                ) : (
+                  <img
+                    src={docFile}
+                    alt={docTitle}
+                    className="wallet-fullscreen-img"
+                  />
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ==========================================================
           MODAL AÑADIR ENTRADA DE EVENTO / CONCIERTO
@@ -919,6 +1182,82 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
             </div>
 
             <form onSubmit={handleCreateTicket} style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+              {/* Sección Subida y Análisis con IA en la parte superior */}
+              <div style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.08))', border: '1.5px solid rgba(99, 102, 241, 0.35)', borderRadius: '16px', padding: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <strong style={{ fontSize: '0.82rem', color: '#e0e7ff', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>✨</span>
+                    <span>Subir Entrada &amp; Rellenar con IA</span>
+                  </strong>
+                  <span style={{ fontSize: '0.68rem', color: '#a5b4fc', background: 'rgba(99, 102, 241, 0.25)', padding: '0.15rem 0.45rem', borderRadius: '999px', fontWeight: 700 }}>
+                    PDF o Imagen
+                  </span>
+                </div>
+                <p style={{ margin: '0 0 0.6rem 0', fontSize: '0.74rem', color: '#94a3b8', lineHeight: 1.35 }}>
+                  Adjunta el archivo de tu entrada (PDF o captura) y la IA detectará automáticamente el concierto/evento, fecha, hora, recinto y asientos.
+                </p>
+
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  ref={fileInputRef}
+                  onChange={handleTicketFileChange}
+                  style={{ display: 'none' }}
+                />
+
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={ticketFileLoading || analyzingAI}
+                    style={{
+                      flex: 1,
+                      background: ticketForm.file ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                      border: ticketForm.file ? '1.5px solid #10b981' : '1.5px dashed rgba(255, 255, 255, 0.3)',
+                      borderRadius: '12px',
+                      padding: '0.7rem',
+                      color: ticketForm.file ? '#34d399' : '#cbd5e1',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    <span>{ticketForm.file ? (isPdf(ticketForm.file) ? '📄 Entrada PDF adjunta' : '🖼️ Imagen adjunta') : '📎 Seleccionar Entrada (PDF o Foto)'}</span>
+                  </button>
+
+                  {ticketForm.file && (
+                    <button
+                      type="button"
+                      disabled={analyzingAI}
+                      onClick={() => analyzeTicketWithAI(ticketForm.file)}
+                      className="wallet-btn-reanalyze"
+                      title="Volver a analizar con IA"
+                    >
+                      {analyzingAI ? '...' : '✨ Analizar'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Banner de progreso análisis con IA */}
+                {analyzingAI && (
+                  <div className="wallet-ai-analyzing-box">
+                    <div className="wallet-ai-pulse-dot" />
+                    <span>✨ Analizando entrada con IA... Detectando evento, fecha, recinto y asientos</span>
+                  </div>
+                )}
+
+                {/* Mensaje de éxito de extracción */}
+                {aiSuccessMessage && !analyzingAI && (
+                  <div className="wallet-ai-success-box">
+                    <span>{aiSuccessMessage}</span>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label style={{ fontSize: '0.74rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>
                   Evento o Concierto *
@@ -1084,41 +1423,6 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
                 />
               </div>
 
-              {/* Subir Archivo / PDF / Foto */}
-              <div>
-                <label style={{ fontSize: '0.74rem', color: '#94a3b8', display: 'block', marginBottom: '0.3rem', fontWeight: 600 }}>
-                  Adjuntar Entrada (Foto o PDF)
-                </label>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  ref={fileInputRef}
-                  onChange={handleTicketFileChange}
-                  style={{ display: 'none' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    width: '100%',
-                    background: ticketForm.file ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                    border: ticketForm.file ? '1.5px solid #10b981' : '1.5px dashed rgba(255, 255, 255, 0.2)',
-                    borderRadius: '12px',
-                    padding: '0.75rem',
-                    color: ticketForm.file ? '#34d399' : '#cbd5e1',
-                    fontSize: '0.82rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem'
-                  }}
-                >
-                  <span>{ticketForm.file ? '✅ Entrada adjuntada (Pulsa para cambiar)' : '📎 Subir Archivo o Foto de la Entrada'}</span>
-                </button>
-              </div>
-
               {/* Nota informativa de sincronización */}
               <div style={{ background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '12px', padding: '0.6rem 0.8rem', fontSize: '0.72rem', color: '#cbd5e1', lineHeight: 1.4 }}>
                 ℹ️ <strong>Sincronización Inteligente:</strong> Se añadirá automáticamente a tu Calendario y recibirás notificación push en el móvil <strong>1 día antes</strong> y <strong>el día del evento</strong>.
@@ -1143,7 +1447,7 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingTicket || ticketFileLoading}
+                  disabled={submittingTicket || ticketFileLoading || analyzingAI}
                   style={{
                     flex: 2,
                     background: 'linear-gradient(135deg, #6366f1, #4f46e5)',

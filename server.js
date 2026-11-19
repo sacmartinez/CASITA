@@ -779,6 +779,158 @@ app.delete('/api/wallet/tickets/:id', async (req, res) => {
   }
 });
 
+// Analizador de entradas y pases con IA (PDF e Imagen)
+app.post('/api/wallet/scan-ticket', async (req, res) => {
+  try {
+    await ensureServerReady();
+    const { fileData } = req.body;
+    if (!fileData) {
+      return res.status(400).json({ error: 'Falta el archivo de la entrada (PDF o imagen)' });
+    }
+
+    const apiKey = db.getGeminiKey();
+    if (!apiKey) {
+      return res.status(400).json({
+        error: 'NEEDS_API_KEY',
+        message: 'Configura la clave de Gemini en Ajustes para activar el análisis automático con IA.'
+      });
+    }
+
+    // Extraer mimeType y base64 puro
+    let mimeType = 'image/jpeg';
+    let base64Data = fileData;
+    const match = fileData.match(/^data:([a-zA-Z0-9/+-]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1];
+      base64Data = match[2];
+    }
+
+    // Normalizar mimeType
+    if (mimeType.includes('pdf')) mimeType = 'application/pdf';
+    else if (mimeType.includes('png')) mimeType = 'image/png';
+    else if (mimeType.includes('webp')) mimeType = 'image/webp';
+    else if (!mimeType.startsWith('image/')) mimeType = 'application/pdf';
+
+    const promptText = `Eres un asistente experto en analizar entradas y tickets de eventos en España y Europa (conciertos de música, festivales, obras de teatro, musicales, cines Yelmo/Cinesa, partidos de fútbol/baloncesto, eventos deportivos, billetes o pases de acceso).
+Analiza con máxima precisión la entrada/ticket adjunto (sea PDF o imagen) y extrae:
+1. "eventName": Nombre del evento o artista principal (ej: "Coldplay - Music of the Spheres Tour", "El Rey León", "Real Madrid vs FC Barcelona", "Gladiator II", "Estopa"). Limpio, sin textos irrelevantes.
+2. "date": Fecha del evento en formato "YYYY-MM-DD". Si solo figura día y mes (ej: "28 de Mayo" o "28/05"), infiere el año que corresponda (el año en curso o próximo si la fecha ya pasó).
+3. "time": Hora de inicio o función en formato "HH:mm" (24h, ej: "21:00", "19:30"). Si no hay hora, deja "".
+4. "venue": Nombre del recinto, estadio, teatro, sala o lugar donde se celebra el evento y ciudad si aparece (ej: "WiZink Center, Madrid", "Teatro Lope de Vega", "Estadio Cívitas Metropolitano").
+5. "seats": Asientos, fila, grada, sector o tipo de pase (ej: "Sector 214, Fila 8, Asiento 12", "Pista General", "Butaca 14").
+6. "barcode": Número del código de barras, código QR, localizador alfanumérico o identificador único de la entrada para escaneo (ej: "284920491823" o "LOC-AB9482").
+7. "forUser": Si en la entrada figura el nombre del comprador o titular, detecta si es "Ismael", "Sandra" o de lo contrario pon "Ambos".
+8. "notes": Información complementaria útil (ej: "Puerta 4", "Acceso Grada Alta", "Apertura de puertas 19:00h").
+
+Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin explicaciones ni bloques de código markdown:
+{
+  "eventName": "Nombre del Evento",
+  "date": "YYYY-MM-DD",
+  "time": "HH:mm",
+  "venue": "Recinto o Lugar",
+  "seats": "Sector / Fila / Asiento",
+  "barcode": "123456789",
+  "forUser": "Ambos",
+  "notes": "Notas o puertas de acceso"
+}`;
+
+    const fetchWithTimeout = async (url, options = {}, timeoutMs = 25000) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    let candidateModels = [
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-2.0-flash',
+      'gemini-flash-latest'
+    ];
+
+    const extractJsonObject = (rawText) => {
+      if (!rawText) return null;
+      const cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      try {
+        return JSON.parse(cleaned);
+      } catch (_) {
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+        }
+        throw new Error('Respuesta sin formato JSON válido');
+      }
+    };
+
+    let parsedResult = null;
+    let lastError = null;
+
+    for (const model of candidateModels) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const genConfig = { temperature: 0.1 };
+        if (model.includes('2.5-flash')) {
+          genConfig.thinkingConfig = { thinkingBudget: 0 };
+        }
+
+        const response = await fetchWithTimeout(
+          url,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: promptText },
+                  { inline_data: { mime_type: mimeType, data: base64Data } }
+                ]
+              }],
+              generationConfig: genConfig
+            })
+          },
+          25000
+        );
+
+        const data = await response.json();
+        if (!response.ok) {
+          const msg = data?.error?.message || `HTTP ${response.status}`;
+          lastError = msg;
+          continue;
+        }
+
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const textOutput = parts.map(p => p.text || '').join('\n').trim();
+        if (textOutput) {
+          const obj = extractJsonObject(textOutput);
+          if (obj && (obj.eventName || obj.date)) {
+            parsedResult = obj;
+            break;
+          }
+        }
+      } catch (err) {
+        lastError = err.message;
+      }
+    }
+
+    if (parsedResult) {
+      return res.json({ success: true, data: parsedResult });
+    } else {
+      return res.status(422).json({
+        error: 'SCAN_FAILED',
+        message: 'No se pudo extraer la información automáticamente del archivo con IA.',
+        detail: lastError
+      });
+    }
+  } catch (error) {
+    console.error('[Scan Ticket Error]', error);
+    res.status(500).json({ error: 'Error al analizar la entrada con IA' });
+  }
+});
+
 app.get('/api/wallet/cards', async (req, res) => {
   try {
     await ensureServerReady();

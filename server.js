@@ -779,30 +779,140 @@ app.delete('/api/wallet/tickets/:id', async (req, res) => {
   }
 });
 
-// Analizador de entradas y pases con IA (PDF e Imagen)
+// Parser heurístico local para texto de entradas y tickets (PDF o OCR)
+function parseTicketTextLocal(text) {
+  if (!text) return {};
+  const result = {};
+  const clean = text.replace(/\r\n/g, '\n').replace(/\t/g, ' ');
+
+  // 1. Fecha (DD/MM/YYYY o textual)
+  const dateMatch = clean.match(/\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b/);
+  if (dateMatch) {
+    let day = dateMatch[1].padStart(2, '0');
+    let month = dateMatch[2].padStart(2, '0');
+    let year = dateMatch[3];
+    if (year.length === 2) year = '20' + year;
+    result.date = `${year}-${month}-${day}`;
+  } else {
+    const monthNames = {
+      enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
+      julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12'
+    };
+    const textDateMatch = clean.match(/\b(\d{1,2})\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚ]+)(?:\s+de\s+(\d{4}))?\b/i);
+    if (textDateMatch) {
+      const day = textDateMatch[1].padStart(2, '0');
+      const mName = textDateMatch[2].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const month = monthNames[mName];
+      const year = textDateMatch[3] || new Date().getFullYear();
+      if (month) {
+        result.date = `${year}-${month}-${day}`;
+      }
+    }
+  }
+
+  // 2. Hora (HH:mm)
+  const timeMatch = clean.match(/(?:a\s+las\s+|hora\s*[:#]?\s*|\b)([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:h|hrs|horas)?\b/i);
+  if (timeMatch) {
+    result.time = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
+  }
+
+  // 3. Localizador / Código
+  const locMatch = clean.match(/(?:localizador|locator|ref(?:erencia)?|c[oó]digo|ticket\s*id|n[uú]m(?:ero)?\s*(?:de\s*)?entrada)\s*[:#]?\s*([A-Za-z0-9\-]{4,30})/i);
+  if (locMatch) {
+    result.barcode = locMatch[1].trim();
+  }
+
+  // 4. Asientos / Fila / Localidad
+  const seatPatterns = [
+    /(?:fila|row)\s*[:#]?\s*([A-Za-z0-9]+)\s*(?:asiento|seat|butaca)\s*[:#]?\s*([A-Za-z0-9]+)/i,
+    /(?:sector|grada|zona|tribuna|palco)\s*[:#]?\s*([A-Za-z0-9\s]+?)(?:,|\.|\n|fila|asiento)/i,
+    /\b(pista\s*(?:general|a|b|premium)?)\b/i,
+    /\b(butaca\s*[:#]?\s*[A-Za-z0-9]+)\b/i,
+    /\b(fila\s*[:#]?\s*[A-Za-z0-9]+)\b/i
+  ];
+  for (const pat of seatPatterns) {
+    const sm = clean.match(pat);
+    if (sm) {
+      result.seats = sm[0].replace(/\s+/g, ' ').trim();
+      break;
+    }
+  }
+
+  // 5. Recintos conocidos
+  const knownVenues = [
+    'WiZink Center', 'Cívitas Metropolitano', 'Civitas Metropolitano', 'Santiago Bernabéu',
+    'Estadio Metropolitano', 'Teatro Coliseum', 'Teatro Lope de Vega', 'Teatro Rialto',
+    'Palacio Vistalegre', 'La Riviera', 'Teatro Real', 'Movistar Arena', 'Palau Sant Jordi',
+    'IFEMA', 'Kinépolis', 'Cinesa', 'Yelmo Cines', 'Yelmo'
+  ];
+  for (const v of knownVenues) {
+    if (new RegExp('\\b' + v + '\\b', 'i').test(clean)) {
+      result.venue = v;
+      break;
+    }
+  }
+  if (!result.venue) {
+    const venueMatch = clean.match(/(?:recinto|lugar|teatro|estadio|sala|cine)\s*[:#]?\s*([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s\-\.\,]{3,35})/i);
+    if (venueMatch) result.venue = venueMatch[1].trim();
+  }
+
+  // 6. Nombre de Evento
+  const lines = clean.split('\n').map(l => l.trim()).filter(l => l.length >= 3);
+  const ignoreWords = ['ticketmaster', 'entradas.com', 'eventbrite', 'fever', 'mutick', 'dice', 'entrada', 'ticket', 'acceso', 'valido', 'precio', 'iva', 'total', 'condiciones', 'web', 'oficial', 'reserva'];
+  const skipPrefixes = ['fecha', 'hora', 'recinto', 'lugar', 'zona', 'fila', 'asiento', 'precio', 'localizador', 'iva', 'total', 'puerta', 'sector', 'pago', 'nº', 'numero'];
+  for (const l of lines) {
+    const lower = l.toLowerCase();
+    if (skipPrefixes.some(p => lower.startsWith(p))) continue;
+    if (ignoreWords.some(ig => lower.includes(ig))) continue;
+    if (/\d{1,2}[\/\-\.]\d{1,2}/.test(l)) continue;
+    if (l.length >= 3 && l.length <= 60) {
+      result.eventName = l;
+      break;
+    }
+  }
+
+  return result;
+}
+
+// Analizador de entradas y pases con IA (PDF e Imagen) con fallback local
 app.post('/api/wallet/scan-ticket', async (req, res) => {
   try {
     await ensureServerReady();
-    const { fileData } = req.body;
-    if (!fileData) {
-      return res.status(400).json({ error: 'Falta el archivo de la entrada (PDF o imagen)' });
+    const { fileData, extractedText } = req.body;
+    if (!fileData && !extractedText) {
+      return res.status(400).json({ error: 'Falta el archivo o texto de la entrada (PDF o imagen)' });
     }
 
     const apiKey = db.getGeminiKey();
+
+    // Si no hay clave de Gemini pero tenemos texto extraído del PDF
     if (!apiKey) {
+      if (extractedText && extractedText.trim()) {
+        const localData = parseTicketTextLocal(extractedText);
+        return res.json({
+          success: true,
+          data: localData,
+          source: 'local_text',
+          geminiConfigured: false,
+          message: 'Datos extraídos mediante análisis de texto del documento.'
+        });
+      }
+
       return res.status(400).json({
         error: 'NEEDS_API_KEY',
-        message: 'Configura la clave de Gemini en Ajustes para activar el análisis automático con IA.'
+        message: 'Para analizar imágenes o capturas de entradas, se requiere la clave de Google Gemini.'
       });
     }
 
-    // Extraer mimeType y base64 puro
+    // Extraer mimeType y base64 puro si hay fileData
     let mimeType = 'image/jpeg';
-    let base64Data = fileData;
-    const match = fileData.match(/^data:([a-zA-Z0-9/+-]+);base64,(.+)$/);
-    if (match) {
-      mimeType = match[1];
-      base64Data = match[2];
+    let base64Data = fileData || '';
+    if (fileData) {
+      const match = fileData.match(/^data:([a-zA-Z0-9/+-]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1];
+        base64Data = match[2];
+      }
     }
 
     // Normalizar mimeType
@@ -811,7 +921,9 @@ app.post('/api/wallet/scan-ticket', async (req, res) => {
     else if (mimeType.includes('webp')) mimeType = 'image/webp';
     else if (!mimeType.startsWith('image/')) mimeType = 'application/pdf';
 
-    const promptText = `Eres un asistente experto en analizar entradas y tickets de eventos en España y Europa (conciertos de música, festivales, obras de teatro, musicales, cines Yelmo/Cinesa, partidos de fútbol/baloncesto, eventos deportivos, billetes o pases de acceso).
+    const textSnippet = extractedText ? `\nTexto digital detectado en el documento:\n"""\n${extractedText.slice(0, 3000)}\n"""\n` : '';
+
+    const promptText = `Eres un asistente experto en analizar entradas y tickets de eventos en España y Europa (conciertos de música, festivales, obras de teatro, musicales, cines Yelmo/Cinesa, partidos de fútbol/baloncesto, eventos deportivos, billetes o pases de acceso).${textSnippet}
 Analiza con máxima precisión la entrada/ticket adjunto (sea PDF o imagen) y extrae:
 1. "eventName": Nombre del evento o artista principal (ej: "Coldplay - Music of the Spheres Tour", "El Rey León", "Real Madrid vs FC Barcelona", "Gladiator II", "Estopa"). Limpio, sin textos irrelevantes.
 2. "date": Fecha del evento en formato "YYYY-MM-DD". Si solo figura día y mes (ej: "28 de Mayo" o "28/05"), infiere el año que corresponda (el año en curso o próximo si la fecha ya pasó).
@@ -877,18 +989,18 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin expl
           genConfig.thinkingConfig = { thinkingBudget: 0 };
         }
 
+        const parts = [{ text: promptText }];
+        if (base64Data) {
+          parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
+        }
+
         const response = await fetchWithTimeout(
           url,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { text: promptText },
-                  { inline_data: { mime_type: mimeType, data: base64Data } }
-                ]
-              }],
+              contents: [{ parts }],
               generationConfig: genConfig
             })
           },
@@ -902,8 +1014,8 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin expl
           continue;
         }
 
-        const parts = data?.candidates?.[0]?.content?.parts || [];
-        const textOutput = parts.map(p => p.text || '').join('\n').trim();
+        const resParts = data?.candidates?.[0]?.content?.parts || [];
+        const textOutput = resParts.map(p => p.text || '').join('\n').trim();
         if (textOutput) {
           const obj = extractJsonObject(textOutput);
           if (obj && (obj.eventName || obj.date)) {
@@ -917,14 +1029,26 @@ Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin expl
     }
 
     if (parsedResult) {
-      return res.json({ success: true, data: parsedResult });
-    } else {
-      return res.status(422).json({
-        error: 'SCAN_FAILED',
-        message: 'No se pudo extraer la información automáticamente del archivo con IA.',
-        detail: lastError
+      return res.json({ success: true, data: parsedResult, source: 'gemini_ai', geminiConfigured: true });
+    }
+
+    // Fallback a parser local si Gemini falló pero hay texto extraído
+    if (extractedText && extractedText.trim()) {
+      const localData = parseTicketTextLocal(extractedText);
+      return res.json({
+        success: true,
+        data: localData,
+        source: 'local_fallback',
+        geminiConfigured: true,
+        message: 'Datos extraídos mediante análisis de texto del documento.'
       });
     }
+
+    return res.status(422).json({
+      error: 'SCAN_FAILED',
+      message: 'No se pudo extraer la información automáticamente del archivo.',
+      detail: lastError
+    });
   } catch (error) {
     console.error('[Scan Ticket Error]', error);
     res.status(500).json({ error: 'Error al analizar la entrada con IA' });

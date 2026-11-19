@@ -11,7 +11,7 @@ export const isPdf = (fileData) => {
   );
 };
 
-// Conversión segura de DataURI base64 a Blob URL (vital para que los navegadores y móviles abran e incrusten PDFs)
+// Conversión segura de DataURI base64 a Blob URL (vital para abrir y descargar)
 export const getBlobUrlFromDataUri = (dataUri) => {
   if (!dataUri) return '';
   if (dataUri.startsWith('blob:') || dataUri.startsWith('http')) return dataUri;
@@ -53,36 +53,257 @@ export const handleDownloadFile = (fileData, defaultName = 'entrada') => {
   document.body.removeChild(link);
 };
 
-// Compresión de imágenes del lado del cliente con resolución óptima para OCR y lectura (1400px, 0.8)
-const compressImage = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const max_width = 1400;
-        let width = img.width;
-        let height = img.height;
+// Cargador asíncrono y en caché de PDF.js (Mozilla)
+let pdfJsLoadingPromise = null;
+export const loadPdfJs = () => {
+  if (typeof window !== 'undefined' && window.pdfjsLib) {
+    if (!window.pdfjsLib.GlobalWorkerOptions?.workerSrc) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    return Promise.resolve(window.pdfjsLib);
+  }
+  if (pdfJsLoadingPromise) return pdfJsLoadingPromise;
 
-        if (width > max_width) {
-          height = Math.round((height * max_width) / width);
-          width = max_width;
+  pdfJsLoadingPromise = new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') return reject(new Error('window no disponible'));
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      return resolve(window.pdfjsLib);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      } else {
+        reject(new Error('pdfjsLib no inicializado'));
+      }
+    };
+    script.onerror = (e) => {
+      pdfJsLoadingPromise = null;
+      reject(e);
+    };
+    document.head.appendChild(script);
+  });
+  return pdfJsLoadingPromise;
+};
+
+// Extractor de texto digital de un PDF en cliente
+export const extractTextFromPdf = async (fileData) => {
+  try {
+    const pdfjs = await loadPdfJs();
+    const base64 = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+    let fullText = '';
+    const maxPages = Math.min(pdf.numPages, 3);
+    for (let i = 1; i <= maxPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const strings = content.items.map(it => it.str);
+      fullText += ' ' + strings.join(' ');
+    }
+    return fullText.trim();
+  } catch (err) {
+    console.warn('Error extrayendo texto del PDF:', err);
+    return '';
+  }
+};
+
+// Parser heurístico de texto de entrada en cliente (extrae datos al vuelo sin esperar a la IA)
+export const parseTicketTextClient = (text) => {
+  if (!text) return {};
+  const result = {};
+  const clean = text.replace(/\r\n/g, '\n').replace(/\t/g, ' ');
+
+  // 1. Fecha (DD/MM/YYYY o DD-MM-YYYY)
+  const dateMatch = clean.match(/\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})\b/);
+  if (dateMatch) {
+    let day = dateMatch[1].padStart(2, '0');
+    let month = dateMatch[2].padStart(2, '0');
+    let year = dateMatch[3];
+    if (year.length === 2) year = '20' + year;
+    result.date = `${year}-${month}-${day}`;
+  } else {
+    const monthNames = {
+      enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
+      julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12'
+    };
+    const textDateMatch = clean.match(/\b(\d{1,2})\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚ]+)(?:\s+de\s+(\d{4}))?\b/i);
+    if (textDateMatch) {
+      const day = textDateMatch[1].padStart(2, '0');
+      const mName = textDateMatch[2].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const month = monthNames[mName];
+      const year = textDateMatch[3] || new Date().getFullYear();
+      if (month) {
+        result.date = `${year}-${month}-${day}`;
+      }
+    }
+  }
+
+  // 2. Hora (HH:mm)
+  const timeMatch = clean.match(/(?:a\s+las\s+|hora\s*[:#]?\s*|\b)([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:h|hrs|horas)?\b/i);
+  if (timeMatch) {
+    result.time = `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`;
+  }
+
+  // 3. Localizador / Código
+  const locMatch = clean.match(/(?:localizador|locator|ref(?:erencia)?|c[oó]digo|ticket\s*id|n[uú]m(?:ero)?\s*(?:de\s*)?entrada)\s*[:#]?\s*([A-Za-z0-9\-]{4,30})/i);
+  if (locMatch) {
+    result.barcode = locMatch[1].trim();
+  }
+
+  // 4. Asientos / Fila / Localidad
+  const seatPatterns = [
+    /(?:fila|row)\s*[:#]?\s*([A-Za-z0-9]+)\s*(?:asiento|seat|butaca)\s*[:#]?\s*([A-Za-z0-9]+)/i,
+    /(?:sector|grada|zona|tribuna|palco)\s*[:#]?\s*([A-Za-z0-9\s]+?)(?:,|\.|\n|fila|asiento)/i,
+    /\b(pista\s*(?:general|a|b|premium)?)\b/i,
+    /\b(butaca\s*[:#]?\s*[A-Za-z0-9]+)\b/i,
+    /\b(fila\s*[:#]?\s*[A-Za-z0-9]+)\b/i
+  ];
+  for (const pat of seatPatterns) {
+    const sm = clean.match(pat);
+    if (sm) {
+      result.seats = sm[0].replace(/\s+/g, ' ').trim();
+      break;
+    }
+  }
+
+  // 5. Recintos conocidos
+  const knownVenues = [
+    'WiZink Center', 'Cívitas Metropolitano', 'Civitas Metropolitano', 'Santiago Bernabéu',
+    'Estadio Metropolitano', 'Teatro Coliseum', 'Teatro Lope de Vega', 'Teatro Rialto',
+    'Palacio Vistalegre', 'La Riviera', 'Teatro Real', 'Movistar Arena', 'Palau Sant Jordi',
+    'IFEMA', 'Kinépolis', 'Cinesa', 'Yelmo Cines', 'Yelmo'
+  ];
+  for (const v of knownVenues) {
+    if (new RegExp('\\b' + v + '\\b', 'i').test(clean)) {
+      result.venue = v;
+      break;
+    }
+  }
+  if (!result.venue) {
+    const venueMatch = clean.match(/(?:recinto|lugar|teatro|estadio|sala|cine)\s*[:#]?\s*([A-Za-z0-9áéíóúÁÉÍÓÚñÑ\s\-\.\,]{3,35})/i);
+    if (venueMatch) result.venue = venueMatch[1].trim();
+  }
+
+  // 6. Nombre de Evento
+  const lines = clean.split('\n').map(l => l.trim()).filter(l => l.length >= 3);
+  const ignoreWords = ['ticketmaster', 'entradas.com', 'eventbrite', 'fever', 'mutick', 'dice', 'entrada', 'ticket', 'acceso', 'valido', 'precio', 'iva', 'total', 'condiciones', 'web', 'oficial', 'reserva'];
+  const skipPrefixes = ['fecha', 'hora', 'recinto', 'lugar', 'zona', 'fila', 'asiento', 'precio', 'localizador', 'iva', 'total', 'puerta', 'sector', 'pago', 'nº', 'numero'];
+  for (const l of lines) {
+    const lower = l.toLowerCase();
+    if (skipPrefixes.some(p => lower.startsWith(p))) continue;
+    if (ignoreWords.some(ig => lower.includes(ig))) continue;
+    if (/\d{1,2}[\/\-\.]\d{1,2}/.test(l)) continue;
+    if (l.length >= 3 && l.length <= 60) {
+      result.eventName = l;
+      break;
+    }
+  }
+
+  return result;
+};
+
+// Componente Visor PDF por Canvas de Alta Definición (compatible 100% con móviles Android e iOS)
+export function PdfCanvasViewer({ fileData, eventName }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const renderPdf = async () => {
+      if (!fileData) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const pdfjs = await loadPdfJs();
+        const base64 = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+        const binaryString = atob(base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
         }
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
-      };
-      img.onerror = (err) => reject(err);
+        const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+        if (isCancelled) return;
+
+        if (!containerRef.current) return;
+        containerRef.current.innerHTML = '';
+
+        const containerWidth = containerRef.current.clientWidth || 360;
+        const targetWidth = Math.max(containerWidth, 320);
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          if (isCancelled) return;
+
+          const unscaledViewport = page.getViewport({ scale: 1.0 });
+          const scale = (targetWidth / unscaledViewport.width) * (window.devicePixelRatio || 1.5);
+          const viewport = page.getViewport({ scale });
+
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.className = 'wallet-pdf-canvas';
+
+          const ctx = canvas.getContext('2d');
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          if (isCancelled) return;
+
+          containerRef.current.appendChild(canvas);
+        }
+        setLoading(false);
+      } catch (err) {
+        console.error('Error renderizando PDF con Canvas:', err);
+        if (!isCancelled) {
+          setError('No se pudo visualizar el PDF en este navegador.');
+          setLoading(false);
+        }
+      }
     };
-    reader.onerror = (err) => reject(err);
-  });
-};
+
+    renderPdf();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [fileData]);
+
+  return (
+    <div className="wallet-pdf-canvas-wrapper">
+      {loading && (
+        <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: '#93c5fd' }}>
+          <div className="wallet-ai-pulse-dot" style={{ margin: '0 auto 0.7rem auto' }} />
+          <span style={{ fontSize: '0.84rem', fontWeight: 700 }}>Cargando entrada PDF en alta definición...</span>
+        </div>
+      )}
+
+      {error && (
+        <div style={{ textAlign: 'center', padding: '1.5rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '12px', color: '#fca5a5' }}>
+          <p style={{ margin: '0 0 0.8rem 0', fontSize: '0.82rem' }}>{error}</p>
+          <button
+            type="button"
+            className="wallet-toolbar-btn primary"
+            onClick={() => handleOpenInNewTab(fileData)}
+          >
+            ↗️ Abrir en Navegador / Móvil
+          </button>
+        </div>
+      )}
+
+      <div ref={containerRef} style={{ width: '100%' }} />
+    </div>
+  );
+}
 
 // Generador visual de código de barras SVG de alta fidelidad para escáneres
 function VisualBarcode({ value, height = 70 }) {
@@ -129,10 +350,15 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Filtros
+  // Filtros y Visualización
   const [searchQuery, setSearchQuery] = useState('');
   const [cardCategory, setCardCategory] = useState('Todo');
-  const [ticketStatusFilter, setTicketStatusFilter] = useState('upcoming'); // 'upcoming' | 'past' | 'all'
+  const [showPastTickets, setShowPastTickets] = useState(false); // Ocultar eventos pasados en sección comprimida
+
+  // Configuración Gemini IA
+  const [geminiConfigured, setGeminiConfigured] = useState(false);
+  const [showGeminiKeyConfig, setShowGeminiKeyConfig] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
 
   // Modales
   const [showAddTicketModal, setShowAddTicketModal] = useState(false);
@@ -183,7 +409,40 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
 
   useEffect(() => {
     fetchWalletData();
+    checkGeminiStatus();
   }, []);
+
+  const checkGeminiStatus = async () => {
+    try {
+      const res = await fetch('/api/gemini/status');
+      if (res.ok) {
+        const data = await res.json();
+        setGeminiConfigured(!!data.configured);
+      }
+    } catch (_) {}
+  };
+
+  const handleSaveGeminiKey = async (e) => {
+    e.preventDefault();
+    if (!geminiKeyInput.trim()) return;
+    try {
+      const res = await fetch('/api/gemini/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: geminiKeyInput.trim() })
+      });
+      if (res.ok) {
+        setGeminiConfigured(true);
+        setShowGeminiKeyConfig(false);
+        showToast('🔑 Clave de Gemini guardada');
+        if (ticketForm.file) {
+          analyzeTicketWithAI(ticketForm.file);
+        }
+      }
+    } catch (_) {
+      showToast('❌ Error al guardar clave');
+    }
+  };
 
   const fetchWalletData = async () => {
     setLoading(true);
@@ -222,16 +481,34 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
     return Math.round((target - now) / 86400000);
   };
 
-  // Analizar entrada con IA (Gemini) a partir del PDF o imagen
-  const analyzeTicketWithAI = async (fileData) => {
-    if (!fileData) return;
+  // Analizar entrada con IA (Gemini) y extractor heurístico local
+  const analyzeTicketWithAI = async (fileData, extractedText = '') => {
+    if (!fileData && !extractedText) return;
     setAnalyzingAI(true);
     setAiSuccessMessage('');
     try {
+      // 1. Si hay texto digital del PDF, extraer y rellenar de inmediato en local
+      if (extractedText) {
+        const local = parseTicketTextClient(extractedText);
+        if (local && (local.eventName || local.date || local.seats || local.venue)) {
+          setTicketForm(prev => ({
+            ...prev,
+            eventName: local.eventName || prev.eventName,
+            date: local.date || prev.date,
+            time: local.time || prev.time,
+            venue: local.venue || prev.venue,
+            seats: local.seats || prev.seats,
+            barcode: local.barcode || prev.barcode
+          }));
+          setAiSuccessMessage('✨ ¡Entrada analizada con éxito! Datos detectados en el documento.');
+        }
+      }
+
+      // 2. Consultar al endpoint backend para completar con IA
       const res = await fetch('/api/wallet/scan-ticket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileData })
+        body: JSON.stringify({ fileData, extractedText })
       });
 
       const json = await res.json();
@@ -248,17 +525,14 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
           forUser: (d.forUser === 'Ismael' || d.forUser === 'Sandra') ? d.forUser : prev.forUser,
           notes: d.notes ? (prev.notes ? `${prev.notes} · ${d.notes}` : d.notes) : prev.notes
         }));
-        setAiSuccessMessage('✨ ¡Entrada analizada con IA! Hemos completado el evento, fecha, recinto y asientos.');
+        setAiSuccessMessage('✨ ¡Entrada analizada con éxito! Datos completados automáticamente.');
         if (navigator.vibrate) navigator.vibrate([40, 50, 40]);
         showToast('✨ Entrada analizada con éxito');
       } else if (json.error === 'NEEDS_API_KEY') {
-        showToast('ℹ️ Configura tu clave de Gemini en Ajustes para análisis IA');
-      } else {
-        showToast('⚠️ No se reconocieron todos los campos automáticamente. Revísalos.');
+        setShowGeminiKeyConfig(true);
       }
     } catch (err) {
       console.error('Error al analizar entrada con IA:', err);
-      showToast('⚠️ No se pudo conectar con el analizador de entradas');
     } finally {
       setAnalyzingAI(false);
     }
@@ -272,20 +546,26 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
     setAiSuccessMessage('');
     try {
       let fileData = null;
+      let extractedText = '';
+
       if (file.type.startsWith('image/')) {
         fileData = await compressImage(file);
       } else {
-        // Para PDFs u otros documentos, leer como data URL
+        // PDF u otros documentos
         fileData = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result);
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
+
+        // Extraer texto digital del PDF con PDF.js en el cliente
+        extractedText = await extractTextFromPdf(fileData);
       }
+
       setTicketForm(prev => ({ ...prev, file: fileData }));
-      showToast('📎 Entrada adjuntada. Analizando datos con IA...');
-      await analyzeTicketWithAI(fileData);
+      showToast('📎 Archivo adjuntado. Analizando datos...');
+      await analyzeTicketWithAI(fileData, extractedText);
     } catch (_) {
       showToast('❌ Error al procesar el archivo');
     } finally {
@@ -445,14 +725,113 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
         (t.notes && t.notes.toLowerCase().includes(q))
       );
     }
-    if (ticketStatusFilter === 'upcoming') {
-      list = list.filter(t => getTicketDaysDiff(t.date) >= 0);
-    } else if (ticketStatusFilter === 'past') {
-      list = list.filter(t => getTicketDaysDiff(t.date) < 0);
+    return list;
+  }, [tickets, searchQuery]);
+
+  // Entradas próximas y activas (ordenadas de más cercana a más lejana)
+  const upcomingTickets = useMemo(() => {
+    return filteredTickets
+      .filter(t => getTicketDaysDiff(t.date) >= 0)
+      .slice()
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [filteredTickets]);
+
+  // Eventos pasados (ordenados del más recientemente finalizado al más antiguo)
+  const pastTickets = useMemo(() => {
+    return filteredTickets
+      .filter(t => getTicketDaysDiff(t.date) < 0)
+      .slice()
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [filteredTickets]);
+
+  // Tarjeta de entrada reutilizable
+  const renderTicketCard = (t, isPast = false) => {
+    const daysDiff = getTicketDaysDiff(t.date);
+    const dateObj = new Date(t.date + 'T00:00:00');
+    const monthName = dateObj.toLocaleDateString('es-ES', { month: 'short' });
+    const dayNum = dateObj.getDate();
+    const yearNum = dateObj.getFullYear();
+
+    let countdownClass = 'soon';
+    let countdownText = `En ${daysDiff} días`;
+    if (daysDiff === 0) {
+      countdownClass = 'today';
+      countdownText = '🎉 ¡Es Hoy!';
+    } else if (daysDiff === 1) {
+      countdownClass = 'tomorrow';
+      countdownText = '⚡ ¡Es Mañana!';
+    } else if (daysDiff < 0) {
+      countdownClass = 'past';
+      countdownText = 'Finalizado';
     }
-    // Ordenar por fecha más próxima
-    return list.slice().sort((a, b) => new Date(a.date) - new Date(b.date));
-  }, [tickets, searchQuery, ticketStatusFilter]);
+
+    return (
+      <div
+        key={t.id}
+        className={`wallet-ticket-card ${isPast ? 'wallet-ticket-card-past' : ''}`}
+        onClick={() => setSelectedTicketPass(t)}
+      >
+        {/* Bloque Fecha Calendario */}
+        <div className="wallet-date-block">
+          <span className="wallet-date-month">{monthName}</span>
+          <span className="wallet-date-day">{dayNum}</span>
+          <span className="wallet-date-year">{yearNum}</span>
+        </div>
+
+        {/* Detalles */}
+        <div className="wallet-ticket-details">
+          <div className="wallet-ticket-title-row">
+            <strong className="wallet-ticket-title">{t.eventName}</strong>
+            <span className={`wallet-countdown-pill ${countdownClass}`}>
+              {countdownText}
+            </span>
+          </div>
+
+          <div className="wallet-ticket-meta">
+            {t.venue && <span>📍 {t.venue}</span>}
+            {t.time && <span>⏰ {t.time}</span>}
+            <span>👥 {t.forUser}</span>
+          </div>
+
+          {t.seats && (
+            <span className="wallet-ticket-seats">
+              💺 {t.seats}
+            </span>
+          )}
+        </div>
+
+        {/* Botones de Acción en la tarjeta: Pase y PDF / Foto */}
+        <div className="wallet-ticket-actions-col" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="wallet-ticket-action-pill pass"
+            onClick={() => {
+              setTicketModalTab('pass');
+              setSelectedTicketPass(t);
+            }}
+            title="Abrir Pase Digital"
+          >
+            <span style={{ fontSize: '1.05rem' }}>📱</span>
+            <span>Pase</span>
+          </button>
+          {t.file && (
+            <button
+              type="button"
+              className="wallet-ticket-action-pill doc"
+              onClick={() => {
+                setTicketModalTab('document');
+                setSelectedTicketPass(t);
+              }}
+              title={isPdf(t.file) ? 'Ver Entrada PDF' : 'Ver Foto'}
+            >
+              <span style={{ fontSize: '1.05rem' }}>{isPdf(t.file) ? '📄' : '🖼️'}</span>
+              <span>{isPdf(t.file) ? 'PDF' : 'Foto'}</span>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // Filtrado de tarjetas (estilo Swoo)
   const filteredCards = useMemo(() => {
@@ -525,39 +904,12 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
         </div>
       )}
 
-      {/* Selector de Estado para Entradas */}
-      {activeTab === 'tickets' && (
-        <div className="wallet-filter-scroll">
-          <button
-            type="button"
-            className={`wallet-chip ${ticketStatusFilter === 'upcoming' ? 'active' : ''}`}
-            onClick={() => setTicketStatusFilter('upcoming')}
-          >
-            🗓️ Próximas ({tickets.filter(t => getTicketDaysDiff(t.date) >= 0).length})
-          </button>
-          <button
-            type="button"
-            className={`wallet-chip ${ticketStatusFilter === 'past' ? 'active' : ''}`}
-            onClick={() => setTicketStatusFilter('past')}
-          >
-            🕰️ Pasadas ({tickets.filter(t => getTicketDaysDiff(t.date) < 0).length})
-          </button>
-          <button
-            type="button"
-            className={`wallet-chip ${ticketStatusFilter === 'all' ? 'active' : ''}`}
-            onClick={() => setTicketStatusFilter('all')}
-          >
-            Todas ({tickets.length})
-          </button>
-        </div>
-      )}
-
       {/* ==========================================================
           VISTA 1: ENTRADAS DE CONCIERTOS Y EVENTOS
           ========================================================== */}
       {activeTab === 'tickets' && (
         <div className="wallet-tickets-container">
-          {filteredTickets.length === 0 ? (
+          {upcomingTickets.length === 0 && pastTickets.length === 0 ? (
             <div className="wallet-empty-state">
               <span className="wallet-empty-emoji">🎟️✨</span>
               <h3 className="wallet-empty-title">Sin entradas registradas</h3>
@@ -566,93 +918,47 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
               </p>
             </div>
           ) : (
-            filteredTickets.map((t) => {
-              const daysDiff = getTicketDaysDiff(t.date);
-              const dateObj = new Date(t.date + 'T00:00:00');
-              const monthName = dateObj.toLocaleDateString('es-ES', { month: 'short' });
-              const dayNum = dateObj.getDate();
-              const yearNum = dateObj.getFullYear();
-
-              let countdownClass = 'soon';
-              let countdownText = `En ${daysDiff} días`;
-              if (daysDiff === 0) {
-                countdownClass = 'today';
-                countdownText = '🎉 ¡Es Hoy!';
-              } else if (daysDiff === 1) {
-                countdownClass = 'tomorrow';
-                countdownText = '⚡ ¡Es Mañana!';
-              } else if (daysDiff < 0) {
-                countdownClass = 'past';
-                countdownText = 'Finalizado';
-              }
-
-              return (
-                <div
-                  key={t.id}
-                  className="wallet-ticket-card"
-                  onClick={() => setSelectedTicketPass(t)}
-                >
-                  {/* Bloque Fecha Calendario */}
-                  <div className="wallet-date-block">
-                    <span className="wallet-date-month">{monthName}</span>
-                    <span className="wallet-date-day">{dayNum}</span>
-                    <span className="wallet-date-year">{yearNum}</span>
-                  </div>
-
-                  {/* Detalles */}
-                  <div className="wallet-ticket-details">
-                    <div className="wallet-ticket-title-row">
-                      <strong className="wallet-ticket-title">{t.eventName}</strong>
-                      <span className={`wallet-countdown-pill ${countdownClass}`}>
-                        {countdownText}
-                      </span>
-                    </div>
-
-                    <div className="wallet-ticket-meta">
-                      {t.venue && <span>📍 {t.venue}</span>}
-                      {t.time && <span>⏰ {t.time}</span>}
-                      <span>👥 {t.forUser}</span>
-                    </div>
-
-                    {t.seats && (
-                      <span className="wallet-ticket-seats">
-                        💺 {t.seats}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Botones de Acción en la tarjeta: Pase y PDF / Foto */}
-                  <div className="wallet-ticket-actions-col" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      className="wallet-ticket-action-pill pass"
-                      onClick={() => {
-                        setTicketModalTab('pass');
-                        setSelectedTicketPass(t);
-                      }}
-                      title="Abrir Pase Digital"
-                    >
-                      <span style={{ fontSize: '1.05rem' }}>📱</span>
-                      <span>Pase</span>
-                    </button>
-                    {t.file && (
-                      <button
-                        type="button"
-                        className="wallet-ticket-action-pill doc"
-                        onClick={() => {
-                          setTicketModalTab('document');
-                          setSelectedTicketPass(t);
-                        }}
-                        title={isPdf(t.file) ? 'Ver Entrada PDF' : 'Ver Foto'}
-                      >
-                        <span style={{ fontSize: '1.05rem' }}>{isPdf(t.file) ? '📄' : '🖼️'}</span>
-                        <span>{isPdf(t.file) ? 'PDF' : 'Foto'}</span>
-                      </button>
-                    )}
-                  </div>
+            <>
+              {/* Eventos Próximos */}
+              {upcomingTickets.length > 0 ? (
+                upcomingTickets.map(t => renderTicketCard(t, false))
+              ) : (
+                <div style={{ textAlign: 'center', padding: '1.4rem 1rem', color: '#94a3b8', background: 'rgba(255,255,255,0.02)', borderRadius: '14px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                  <span style={{ fontSize: '1.6rem', display: 'block', marginBottom: '0.35rem' }}>🎟️🎉</span>
+                  <strong style={{ color: '#cbd5e1', fontSize: '0.88rem' }}>No tienes próximos eventos pendientes</strong>
+                  <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
+                    Tus eventos finalizados están archivados abajo.
+                  </p>
                 </div>
-              );
-            })
+              )}
+
+              {/* Acordeón comprimido de Eventos Pasados */}
+              {pastTickets.length > 0 && (
+                <div className="wallet-past-section">
+                  <button
+                    type="button"
+                    className="wallet-past-toggle-btn"
+                    onClick={() => setShowPastTickets(prev => !prev)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '1.1rem' }}>🕰️</span>
+                      <span style={{ fontSize: '0.86rem', fontWeight: 700, color: '#cbd5e1' }}>
+                        Eventos pasados ({pastTickets.length})
+                      </span>
+                    </div>
+                    <span className="wallet-past-toggle-arrow" style={{ fontSize: '0.78rem', color: '#a5b4fc', fontWeight: 600 }}>
+                      {showPastTickets ? '▲ Ocultar' : '▼ Ver'}
+                    </span>
+                  </button>
+
+                  {showPastTickets && (
+                    <div className="wallet-past-list">
+                      {pastTickets.map(t => renderTicketCard(t, true))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -881,14 +1187,10 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
 
                     {isPdf(selectedTicketPass.file) ? (
                       <div>
-                        <iframe
-                          src={getBlobUrlFromDataUri(selectedTicketPass.file)}
-                          title="Entrada PDF"
-                          className="wallet-pdf-iframe"
+                        <PdfCanvasViewer
+                          fileData={selectedTicketPass.file}
+                          eventName={selectedTicketPass.eventName}
                         />
-                        <span style={{ fontSize: '0.7rem', color: '#94a3b8', display: 'block', marginTop: '0.35rem', textAlign: 'center' }}>
-                          💡 Si tu móvil no muestra el PDF incrustado, pulsa "↗️ Abrir en Navegador / Móvil" para zoom fluido.
-                        </span>
                       </div>
                     ) : (
                       <div style={{ cursor: 'pointer' }} onClick={() => setViewDocumentModal({ file: selectedTicketPass.file, eventName: selectedTicketPass.eventName, type: 'image' })}>
@@ -1143,11 +1445,7 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
 
               <div className="wallet-doc-fullscreen-body">
                 {isFilePdf ? (
-                  <iframe
-                    src={getBlobUrlFromDataUri(docFile)}
-                    title="Visor Entrada PDF Completa"
-                    className="wallet-fullscreen-iframe"
-                  />
+                  <PdfCanvasViewer fileData={docFile} eventName={docTitle} />
                 ) : (
                   <img
                     src={docFile}
@@ -1256,6 +1554,84 @@ export default function WalletApp({ currentUser, onOpenCalendar }) {
                     <span>{aiSuccessMessage}</span>
                   </div>
                 )}
+
+                {/* Configuración opcional de Gemini para análisis de fotos físicas */}
+                <div style={{ marginTop: '0.65rem', borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: '0.5rem' }}>
+                  {!showGeminiKeyConfig ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowGeminiKeyConfig(true)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: geminiConfigured ? '#34d399' : '#818cf8',
+                        fontSize: '0.72rem',
+                        cursor: 'pointer',
+                        padding: 0,
+                        textDecoration: 'underline',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.3rem'
+                      }}
+                    >
+                      <span>{geminiConfigured ? '✅ IA de visión activa (Gemini)' : '⚙️ Configurar clave de Gemini para fotos'}</span>
+                      <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>({geminiConfigured ? 'cambiar' : 'opcional'})</span>
+                    </button>
+                  ) : (
+                    <div className="wallet-gemini-key-box">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#e0e7ff' }}>
+                          🔑 Clave API de Google Gemini (Gratis)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowGeminiKeyConfig(false)}
+                          style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <p style={{ margin: '0 0 0.45rem 0', fontSize: '0.68rem', color: '#cbd5e1', lineHeight: 1.35 }}>
+                        Para analizar fotos o tickets físicos de papel. Los PDFs digitales de Ticketmaster, Entradas, etc. funcionan automáticamente sin clave.
+                      </p>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <input
+                          type="password"
+                          placeholder="AIzaSy..."
+                          value={geminiKeyInput}
+                          onChange={(e) => setGeminiKeyInput(e.target.value)}
+                          style={{
+                            flex: 1,
+                            background: 'rgba(0, 0, 0, 0.4)',
+                            border: '1px solid rgba(255, 255, 255, 0.25)',
+                            borderRadius: '8px',
+                            padding: '0.4rem 0.6rem',
+                            color: '#ffffff',
+                            fontSize: '0.75rem',
+                            fontFamily: 'monospace',
+                            outline: 'none'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSaveGeminiKey}
+                          style={{
+                            background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '0.4rem 0.75rem',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '0.72rem',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Guardar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
